@@ -9,10 +9,10 @@
 
 Kotlin · Compose Desktop · 100% local · no telemetry · MIT
 
-![status](https://img.shields.io/badge/status-v0.1--scaffold-34D399)
+[![build](https://github.com/Tauseef666-ctrl/Trashpanda/actions/workflows/build.yml/badge.svg)](https://github.com/Tauseef666-ctrl/Trashpanda/actions/workflows/build.yml)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2B-1F2937)
 ![license](https://img.shields.io/badge/license-MIT-22C55E)
-![build](https://img.shields.io/badge/build-gradle%209-818CF8)
+![size](https://img.shields.io/badge/app%20size%20%3C%2080MB-60MB%20built-34D399)
 
 </div>
 
