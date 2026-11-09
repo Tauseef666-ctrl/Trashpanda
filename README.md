@@ -71,6 +71,12 @@ gradlew.bat :engine:run --args="--all-drives"
 
 # guided Q&A: Bin explains each category and asks what to delete
 gradlew.bat :engine:run --args="--ask --temp"
+
+# guided Q&A + real Recycle Bin moves + a receipt you can undo (explicit, opt-in)
+gradlew.bat :engine:run --args="--ask --temp --execute"
+
+# restore everything a receipt moved back to its original paths
+gradlew.bat :engine:run --args="--undo latest"
 ```
 
 ## Try it (desktop app)
@@ -106,8 +112,8 @@ asserted byte-for-byte on a live fixture tree.
 ## Roadmap
 
 - **v0.1 (now)** — scaffold · rule db · read-only engine · interview · Compose Home
-- **v0.2** — Recycle Bin execution + receipts + undo · report screen with checkboxes
-- **v0.3** — elevated tasks (hibernation, DISM) · scheduler · tray
+- **v0.2** — Recycle Bin execution + receipts + undo (**shipped**) · report screen with checkboxes
+- **v0.3** — themes (Light milk, Terminal neon) · elevated tasks (hibernation, DISM) · scheduler · tray
 - **v1.0** — signed installer · duplicate finder · `--dry-run --json` CLI
 
 Full contracts: [PLAN.txt](PLAN.txt) + [DESIGN.md](DESIGN.md).
