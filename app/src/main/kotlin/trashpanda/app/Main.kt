@@ -57,7 +57,7 @@ import java.nio.file.Path
  * trashpanda v0.1 — Home "Drive health" (DESIGN §4.1 screen 001), faithful to preview/home.png.
  * The demo scan button runs the REAL engine (read-only) over %LOCALAPPDATA%\Temp.
  */
-/** Loads the bundled raccoon icon for the window (falls back to default if missing). */
+/** Loads the bundled raccoon icon (falls back to default if missing). */
 private fun windowIcon(): java.awt.Image? = runCatching {
     val url = Tokens::class.java.getResource("/icon.png") ?: return@runCatching null
     javax.swing.ImageIcon(url).image
@@ -67,8 +67,10 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "trashpanda — eats your digital garbage. leaves your files alone.",
-        icon = windowIcon(),
     ) {
+        LaunchedEffect(Unit) {
+            windowIcon()?.let { window.iconImage = it }
+        }
         TrashPandaTheme {
             HomeScreen()
         }
