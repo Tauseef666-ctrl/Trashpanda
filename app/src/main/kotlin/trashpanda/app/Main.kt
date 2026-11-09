@@ -22,11 +22,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,26 +44,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import trashpanda.engine.report.Sizes
 import trashpanda.engine.scan.Planner
+import trashpanda.rules.RuleAction
 import trashpanda.rules.RuleCatalog
 import trashpanda.rules.Risk
-import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * trashpanda v0.1 — Home "Drive health" (DESIGN §4.1 screen 001), faithful to preview/home.png.
- * The demo scan button runs the REAL engine (read-only) over %LOCALAPPDATA%\Temp.
+ * trashpanda v0.2 — Home "Drive health" (DESIGN §4.1 screen 001) + Report (002).
+ * Scan runs the REAL read-only engine (Planner) over the machine's user-writable junk
+ * hotspots; the report screen wires the same Executor the CLI uses — Recycle Bin only,
+ * receipt, undo. GUI and console share one engine path.
  */
 /** Loads the bundled raccoon icon (falls back to default if missing). */
 private fun windowIcon(): java.awt.Image? = runCatching {
     val url = Tokens::class.java.getResource("/icon.png") ?: return@runCatching null
     javax.swing.ImageIcon(url).image
 }.getOrNull()
+
+private enum class Screen { HOME, REPORT }
 
 fun main() = application {
     Window(
@@ -71,13 +76,52 @@ fun main() = application {
         LaunchedEffect(Unit) {
             windowIcon()?.let { window.iconImage = it }
         }
+
+        var screen by remember { mutableStateOf(Screen.HOME) }
+        var plan by remember { mutableStateOf<Planner.Plan?>(null) }
+        var scanning by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+
+        fun scanAndOpen() {
+            if (scanning) return
+            scanning = true
+            scope.launch {
+                try {
+                    plan = withContext(Dispatchers.IO) { realScan() }
+                    screen = Screen.REPORT
+                } finally {
+                    scanning = false
+                }
+            }
+        }
+
         TrashPandaTheme {
-            HomeScreen()
+            when (screen) {
+                Screen.HOME -> HomeScreen(
+                    plan = plan,
+                    scanning = scanning,
+                    onScan = ::scanAndOpen,
+                    onReview = { screen = Screen.REPORT },
+                )
+                Screen.REPORT -> {
+                    val current = plan
+                    if (current == null) {
+                        HomeScreen(
+                            plan = null,
+                            scanning = scanning,
+                            onScan = ::scanAndOpen,
+                            onReview = { screen = Screen.REPORT },
+                        )
+                    } else {
+                        ReportScreen(current, onBack = { screen = Screen.HOME })
+                    }
+                }
+            }
         }
     }
 }
 
-// Last-scan snapshot from the proof set (09 Nov 2026). Replaced by real scan cache in P2.
+// Pre-first-scan fallback for the hero card. Junk lists below come from the real plan.
 private data class Snapshot(
     val diskTotalGb: Double = 108.0,
     val diskFreeGb: Double = 24.0,
@@ -94,20 +138,39 @@ private data class JunkRow(
     val risk: Risk,
 )
 
-private val topJunk = listOf(
-    JunkRow("AI agents — session databases", "%USERPROFILE%\\.local\\share\\opencode\\opencode.db", "8.1 GB", Risk.AMBER),
-    JunkRow("Windows temp", "%LOCALAPPDATA%\\Temp (older than 24 h)", "7.9 GB", Risk.GREEN),
-    JunkRow("Agent-bundled browsers", "%LOCALAPPDATA%\\hermes\\tools\\chromium-*", "5.4 GB", Risk.AMBER),
-    JunkRow("Build outputs", "\\u2026\\NewPipe\\desktopApp\\build", "3.0 GB", Risk.GREEN),
-    JunkRow("Gradle caches", "%USERPROFILE%\\.gradle\\caches", "1.9 GB", Risk.GREEN),
-    JunkRow("npm tools installed \u00d73", "%APPDATA%\\npm\\node_modules (opencode, claude, kilo\u2026)", "0.8 GB", Risk.AMBER),
-)
-
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    plan: Planner.Plan?,
+    scanning: Boolean,
+    onScan: () -> Unit,
+    onReview: () -> Unit,
+) {
     val snapshot = remember { Snapshot() }
-    var demoRunning by remember { mutableStateOf(false) }
-    var demoResult by remember { mutableStateOf<String?>(null) }
+    val reclaimable = plan?.recyclableBytes ?: snapshot.reclaimableBytes
+    val junkCount = plan?.items?.size ?: snapshot.junkItems
+    val autoPct = autoCheckableShare(plan) ?: snapshot.autoCheckPct
+    val tickPct = plan?.let { maxOf(0, 100 - autoPct) } ?: snapshot.needsTickPct
+
+    // Top junk categories straight from the real plan (fallback: none — say so honestly).
+    val junkRows: List<JunkRow> = remember(plan) {
+        if (plan == null) {
+            emptyList()
+        } else {
+            plan.items.groupBy { it.rule.id }
+                .map { (_, members) ->
+                    val bytes = members.sumOf { it.sizeBytes }
+                    bytes to JunkRow(
+                        title = members.first().rule.title,
+                        path = "${members.size} item(s) · e.g. ${members.first().path.fileName}",
+                        sizeLabel = Sizes.human(bytes),
+                        risk = members.first().rule.risk,
+                    )
+                }
+                .sortedByDescending { it.first }
+                .take(6)
+                .map { it.second }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -121,8 +184,9 @@ fun HomeScreen() {
         Column {
             Text("Drive health", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
             Text(
-                "C:\\ — last scan 09 Nov, 21:14 · Bin found ${Sizes.human(snapshot.reclaimableBytes)} of garbage. " +
-                    "Nothing has been touched yet — scanning never changes the disk.",
+                "C:\\ — ${if (plan == null) "Bin hasn't looked yet" else "live read-only scan"} · found " +
+                    "${Sizes.human(reclaimable)} across $junkCount item(s). " +
+                    "Scanning never changes the disk.",
                 fontSize = 13.sp,
                 color = Tokens.textDim,
             )
@@ -152,12 +216,12 @@ fun HomeScreen() {
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("Reclaimable now", Sizes.human(snapshot.reclaimableBytes), Tokens.primary, Modifier.weight(1f))
-                    StatCard("Junk items", snapshot.junkItems.toString(), Tokens.text, Modifier.weight(1f))
+                    StatCard("Reclaimable now", Sizes.human(reclaimable), Tokens.primary, Modifier.weight(1f))
+                    StatCard("Junk items", junkCount.toString(), Tokens.text, Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("Auto-checkable", "${snapshot.autoCheckPct}%", Tokens.riskSafe, Modifier.weight(1f))
-                    StatCard("Needs your tick", "${snapshot.needsTickPct}%", Tokens.riskReview, Modifier.weight(1f))
+                    StatCard("Auto-checkable", "$autoPct%", Tokens.riskSafe, Modifier.weight(1f))
+                    StatCard("Needs your tick", "$tickPct%", Tokens.riskReview, Modifier.weight(1f))
                 }
             }
         }
@@ -174,8 +238,17 @@ fun HomeScreen() {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text("Top junk categories", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
-                Text("tap a category to jump to its report section", fontSize = 12.sp, color = Tokens.textDim)
-                topJunk.forEach { row -> JunkRowView(row) }
+                Text("real rules matched · biggest piles first", fontSize = 12.sp, color = Tokens.textDim)
+                if (junkRows.isEmpty()) {
+                    Text(
+                        "Bin hasn't swept yet — press the mint button and it will read your junk piles (never touching them).",
+                        fontSize = 12.5.sp,
+                        color = Tokens.textDim,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                } else {
+                    junkRows.forEach { row -> JunkRowView(row) }
+                }
             }
 
             Column(
@@ -201,19 +274,10 @@ fun HomeScreen() {
                     }
                 }
 
-                // The CTA runs the REAL read-only engine over %LOCALAPPDATA%\Temp.
+                // The CTA runs the REAL read-only engine, then opens the report.
                 Button(
-                    onClick = {
-                        if (!demoRunning) {
-                            demoRunning = true
-                            demoResult = null
-                            CoroutineScope(Dispatchers.Main).launch {
-                                demoResult = withContext(Dispatchers.IO) { runTempDemoScan() }
-                                demoRunning = false
-                            }
-                        }
-                    },
-                    enabled = !demoRunning,
+                    onClick = onScan,
+                    enabled = !scanning,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Tokens.primary,
@@ -223,28 +287,22 @@ fun HomeScreen() {
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
                     Text(
-                        if (demoRunning) "Bin is sweeping…" else "Scan now (demo: Temp folder, read-only)",
+                        if (scanning) "Bin is sweeping… (read-only)" else "Scan now — temp + crash dumps (read-only)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                     )
                 }
 
-                demoResult?.let { result ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF0D1420))
-                            .border(1.dp, Tokens.border, RoundedCornerShape(12.dp))
-                            .padding(14.dp),
+                if (plan != null && !scanning) {
+                    TextButton(
+                        onClick = onReview,
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
                     ) {
-                        Text("Dry-run receipt (read-only)", fontSize = 12.sp, color = Tokens.primary, fontWeight = FontWeight.SemiBold)
                         Text(
-                            result,
-                            fontSize = 12.sp,
-                            color = Tokens.textDim,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(top = 6.dp),
+                            "Open the report → tick what goes",
+                            color = Tokens.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
                         )
                     }
                 }
@@ -252,11 +310,38 @@ fun HomeScreen() {
         }
 
         Text(
-            "trashpanda v0.1 · P0 scaffold · full scan + report + execute lands next (PLAN P1-P2)",
+            "trashpanda v0.2 · scan → report → Recycle Bin with receipts · undo from any receipt",
             fontSize = 11.sp,
             color = Tokens.textDim,
         )
     }
+}
+
+/** How much of the reclaimable pile GREEN rules own — the "auto-checkable" promise in %. */
+private fun autoCheckableShare(plan: Planner.Plan?): Int? {
+    plan ?: return null
+    val recyclable = plan.items.filter { it.action == RuleAction.RECYCLE }
+    val total = recyclable.sumOf { it.sizeBytes }
+    if (total == 0L) return 100
+    val green = recyclable.filter { it.rule.risk == Risk.GREEN }.sumOf { it.sizeBytes }
+    return ((green * 100L) / total).toInt()
+}
+
+/**
+ * Real read-only engine pass over the machine's junk hotspots (long paths, so rule
+ * globs match): user temp folder, Windows crash dumps, WER queues. planFromDisk skips
+ * roots that don't exist, so nothing here throws.
+ */
+private fun realScan(): Planner.Plan {
+    val catalog = RuleCatalog.loadBuiltin()
+    val lad = System.getenv("LOCALAPPDATA")
+    val roots = listOfNotNull(
+        lad?.let { Path.of(it, "Temp") },
+        lad?.let { Path.of(it, "CrashDumps") },
+        lad?.let { Path.of(it, "Microsoft", "Windows", "WER", "ReportQueue") },
+        lad?.let { Path.of(it, "Microsoft", "Windows", "WER", "ReportArchive") },
+    )
+    return Planner(catalog).planFromDisk(roots)
 }
 
 @Composable
@@ -338,22 +423,5 @@ private fun StorageDonut(usedFraction: Float, reclaimFraction: Float, modifier: 
             false, topLeft, arcSize,
             style = Stroke(stroke, cap = StrokeCap.Butt),
         )
-    }
-}
-
-/** Real engine dry-run over %LOCALAPPDATA%\Temp — read-only, prints a receipt string. */
-private fun runTempDemoScan(): String {
-    val temp = Path.of(System.getenv("LOCALAPPDATA"), "Temp")
-    if (!Files.isDirectory(temp)) return "Temp not found — nothing to sweep."
-    val catalog = RuleCatalog.loadBuiltin()
-    val started = System.currentTimeMillis()
-    val plan = Planner(catalog).planFromDisk(listOf(temp))
-    val ms = System.currentTimeMillis() - started
-    return buildString {
-        appendLine("scanned: $temp")
-        appendLine("reclaimable: ${Sizes.human(plan.recyclableBytes)} across ${plan.recycleCount} item(s)")
-        appendLine("report-only: ${plan.items.count { it.action == trashpanda.rules.RuleAction.REPORT_ONLY }} · " +
-            "junctions mirrored: ${plan.reparseMirrors} · denied (skipped, not killed): ${plan.deniedDirs}")
-        appendLine("took ${ms} ms · read-only · nothing was deleted")
     }
 }
