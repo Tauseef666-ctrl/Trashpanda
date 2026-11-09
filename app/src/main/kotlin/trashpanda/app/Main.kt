@@ -59,7 +59,7 @@ import java.nio.file.Path
  */
 /** Loads the bundled raccoon icon for the window (falls back to default if missing). */
 private fun windowIcon(): java.awt.Image? = runCatching {
-    val url = MainKt::class.java.getResource("/icon.png") ?: return@runCatching null
+    val url = Tokens::class.java.getResource("/icon.png") ?: return@runCatching null
     javax.swing.ImageIcon(url).image
 }.getOrNull()
 
