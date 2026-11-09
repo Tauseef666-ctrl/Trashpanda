@@ -2,7 +2,7 @@
 
 <img src="docs/logo.png" alt="trashpanda" width="180"/>
 
-# trashpanda
+# Trashpanda
 
 **Windows cleaner for the AI-agent era.**
 *Eats your digital garbage. Leaves your files alone.*
