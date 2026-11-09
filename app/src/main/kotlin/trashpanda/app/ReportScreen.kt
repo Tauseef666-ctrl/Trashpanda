@@ -328,7 +328,7 @@ private fun MittButton(label: String, enabled: Boolean, onClick: () -> Unit) {
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Tokens.primary,
-            contentColor = Color(0xFF06281C),
+            contentColor = Tokens.primaryOn,
             disabledContainerColor = Tokens.border,
         ),
         modifier = Modifier.height(44.dp),
@@ -376,7 +376,7 @@ private fun EntryRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF0B0F14).copy(alpha = 0.45f))
+            .background(Tokens.cardInset)
             .then(if (enabled) Modifier.clickable(onClick = onToggle) else Modifier)
             .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -422,7 +422,7 @@ private fun TickBox(checked: Boolean, enabled: Boolean, onToggle: () -> Unit) {
             .then(if (enabled) Modifier.clickable(onClick = onToggle) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (checked) Text("✓", color = Color(0xFF06281C), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        if (checked) Text("✓", color = Tokens.primaryOn, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -467,7 +467,7 @@ private fun ReceiptPanel(receipt: Receipt, busy: Boolean, onUndo: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF0D1420))
+            .background(Tokens.surface)
             .border(1.dp, Tokens.primary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -498,7 +498,7 @@ private fun ReceiptPanel(receipt: Receipt, busy: Boolean, onUndo: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0B0F14).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .background(Tokens.bg, RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

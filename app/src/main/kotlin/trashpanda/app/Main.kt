@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,7 @@ fun main() = application {
         var screen by remember { mutableStateOf(Screen.HOME) }
         var plan by remember { mutableStateOf<Planner.Plan?>(null) }
         var scanning by remember { mutableStateOf(false) }
+        var theme by remember { mutableStateOf(ThemeName.DARK_GLASS) }
         val scope = rememberCoroutineScope()
 
         fun scanAndOpen() {
@@ -95,27 +97,34 @@ fun main() = application {
             }
         }
 
-        TrashPandaTheme {
-            when (screen) {
-                Screen.HOME -> HomeScreen(
-                    plan = plan,
-                    scanning = scanning,
-                    onScan = ::scanAndOpen,
-                    onReview = { screen = Screen.REPORT },
-                )
-                Screen.REPORT -> {
-                    val current = plan
-                    if (current == null) {
-                        HomeScreen(
-                            plan = null,
-                            scanning = scanning,
-                            onScan = ::scanAndOpen,
-                            onReview = { screen = Screen.REPORT },
-                        )
-                    } else {
-                        ReportScreen(current, onBack = { screen = Screen.HOME })
+        TrashPandaTheme(theme) {
+            Box(Modifier.fillMaxSize()) {
+                when (screen) {
+                    Screen.HOME -> HomeScreen(
+                        plan = plan,
+                        scanning = scanning,
+                        theme = theme,
+                        onTheme = { theme = it },
+                        onScan = ::scanAndOpen,
+                        onReview = { screen = Screen.REPORT },
+                    )
+                    Screen.REPORT -> {
+                        val current = plan
+                        if (current == null) {
+                            HomeScreen(
+                                plan = null,
+                                scanning = scanning,
+                                theme = theme,
+                                onTheme = { theme = it },
+                                onScan = ::scanAndOpen,
+                                onReview = { screen = Screen.REPORT },
+                            )
+                        } else {
+                            ReportScreen(current, onBack = { screen = Screen.HOME })
+                        }
                     }
                 }
+                Scanlines()
             }
         }
     }
@@ -142,6 +151,8 @@ private data class JunkRow(
 fun HomeScreen(
     plan: Planner.Plan?,
     scanning: Boolean,
+    theme: ThemeName,
+    onTheme: (ThemeName) -> Unit,
     onScan: () -> Unit,
     onReview: () -> Unit,
 ) {
@@ -181,15 +192,18 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         // Header
-        Column {
-            Text("Drive health", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
-            Text(
-                "C:\\ — ${if (plan == null) "Bin hasn't looked yet" else "live read-only scan"} · found " +
-                    "${Sizes.human(reclaimable)} across $junkCount item(s). " +
-                    "Scanning never changes the disk.",
-                fontSize = 13.sp,
-                color = Tokens.textDim,
-            )
+        Row {
+            Column(Modifier.weight(1f)) {
+                Text("Drive health", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
+                Text(
+                    "C:\\ — ${if (plan == null) "Bin hasn't looked yet" else "live read-only scan"} · found " +
+                        "${Sizes.human(reclaimable)} across $junkCount item(s). " +
+                        "Scanning never changes the disk.",
+                    fontSize = 13.sp,
+                    color = Tokens.textDim,
+                )
+            }
+            ThemeSwitch(current = theme, onPick = onTheme)
         }
 
         // Hero: donut + stats
@@ -210,7 +224,7 @@ fun HomeScreen(
                     modifier = Modifier.size(190.dp),
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("24 GB", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("24 GB", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Tokens.text)
                     Text("free of 108 GB", fontSize = 12.sp, color = Tokens.textDim)
                 }
             }
@@ -281,7 +295,7 @@ fun HomeScreen(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Tokens.primary,
-                        contentColor = Color(0xFF06281C),
+                        contentColor = Tokens.primaryOn,
                         disabledContainerColor = Tokens.border,
                     ),
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -344,12 +358,57 @@ private fun realScan(): Planner.Plan {
     return Planner(catalog).planFromDisk(roots)
 }
 
+/** Theme switcher pills — glass · milk · neon (DESIGN §3.1, live in the header). */
+@Composable
+private fun ThemeSwitch(current: ThemeName, onPick: (ThemeName) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ThemeName.entries.forEach { t ->
+            val active = t == current
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(if (active) Tokens.primary.copy(alpha = 0.16f) else Color.Transparent)
+                    .border(1.dp, if (active) Tokens.primary else Tokens.border, RoundedCornerShape(999.dp))
+                    .clickable { onPick(t) }
+                    .padding(horizontal = 11.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    t.label,
+                    fontSize = 11.sp,
+                    color = if (active) Tokens.primary else Tokens.textDim,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * CRT scanlines overlay — only the Terminal neon theme asks for it (DESIGN §3.1:
+ * 4% black stripes). Sits on top of every screen, never catches input.
+ */
+@Composable
+private fun Scanlines() {
+    if (!Tokens.scanline) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        var y = 0f
+        while (y < size.height) {
+            drawRect(
+                Color.Black.copy(alpha = 0.05f),
+                topLeft = Offset(0f, y),
+                size = Size(size.width, 1f),
+            )
+            y += 4f
+        }
+    }
+}
+
 @Composable
 private fun StatCard(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF0B0F14).copy(alpha = 0.5f))
+            .background(Tokens.cardInset)
             .border(1.dp, Tokens.border, RoundedCornerShape(12.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
@@ -364,7 +423,7 @@ private fun JunkRowView(row: JunkRow) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF0B0F14).copy(alpha = 0.45f))
+            .background(Tokens.cardInset)
             .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -373,7 +432,7 @@ private fun JunkRowView(row: JunkRow) {
             Text(row.title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
             Text(row.path, fontSize = 11.sp, color = Tokens.textDim, fontFamily = FontFamily.Monospace)
         }
-        Text(row.sizeLabel, fontSize = 13.sp, color = Color.White, fontFamily = FontFamily.Monospace)
+        Text(row.sizeLabel, fontSize = 13.sp, color = Tokens.text, fontFamily = FontFamily.Monospace)
         RiskChip(row.risk)
     }
 }
@@ -404,14 +463,14 @@ private fun RiskChip(risk: Risk) {
 @Composable
 private fun StorageDonut(usedFraction: Float, reclaimFraction: Float, modifier: Modifier = Modifier) {
     val animated by animateFloatAsState(usedFraction, tween(700), label = "used")
+    val track = Tokens.donutTrack
+    val used = Tokens.donutUsed
+    val mint = Tokens.primary
     Canvas(modifier) {
         val stroke = 40f
         val inset = stroke
         val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
         val topLeft = Offset(inset, inset)
-        val track = Color(0xFF151D2B)
-        val used = Color(0xFF3B4A61)
-        val mint = Tokens.primary
 
         drawArc(track, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
         drawArc(used, 0f, 360f * animated, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
