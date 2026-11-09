@@ -81,7 +81,6 @@ class Interview(
             out("Selected for Recycle Bin: ${Sizes.human(approved.sumOf { it.sizeBytes })} across ${approved.size} item(s)")
             out("Left alone: ${Sizes.human(declined.sumOf { it.sizeBytes })} across ${declined.size} item(s)")
         }
-        out("Dry run ends here - the Recycle Bin mover + receipt land in the next phase.")
         return Selection(approved, declined)
     }
 
