@@ -3,6 +3,7 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.compose.desktop)
 }
@@ -12,12 +13,17 @@ dependencies {
     implementation(project(":rules"))
     implementation(project(":platform"))
     implementation(libs.coroutines.core)
+    implementation(libs.serialization.json)
 
     implementation(compose.runtime)
     implementation(compose.foundation)
     implementation(compose.material3)
     implementation(compose.ui)
+    @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+    implementation(compose.uiTest)
     implementation(compose.desktop.currentOs)
+
+    testImplementation(libs.kotlin.test)
 }
 
 compose.desktop {

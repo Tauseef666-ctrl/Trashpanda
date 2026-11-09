@@ -113,7 +113,7 @@ asserted byte-for-byte on a live fixture tree.
 
 - **v0.1 (now)** — scaffold · rule db · read-only engine · interview · Compose Home
 - **v0.2** — Recycle Bin execution + receipts + undo (**shipped**) · report screen + GUI execute/undo (**shipped**)
-- **v0.3** — themes: Light milk + Terminal neon with switcher (**shipped**) · elevated tasks (hibernation, DISM) · scheduler · tray
+- **v0.3** — themes: Light milk + Terminal neon with switcher (**shipped**) · theme persistence (settings.json) (**shipped**) · elevated tasks (hibernation, DISM) · scheduler · tray
 - **v1.0** — signed installer · duplicate finder · `--dry-run --json` CLI
 
 Full contracts: [PLAN.txt](PLAN.txt) + [DESIGN.md](DESIGN.md).

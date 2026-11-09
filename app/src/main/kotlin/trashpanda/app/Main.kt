@@ -81,7 +81,8 @@ fun main() = application {
         var screen by remember { mutableStateOf(Screen.HOME) }
         var plan by remember { mutableStateOf<Planner.Plan?>(null) }
         var scanning by remember { mutableStateOf(false) }
-        var theme by remember { mutableStateOf(ThemeName.DARK_GLASS) }
+        var theme by remember { mutableStateOf(Settings.loadTheme()) }
+        LaunchedEffect(theme) { Settings.saveTheme(theme) }
         val scope = rememberCoroutineScope()
 
         fun scanAndOpen() {

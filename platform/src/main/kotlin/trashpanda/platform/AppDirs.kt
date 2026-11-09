@@ -17,6 +17,8 @@ object AppDirs {
 
     val receipts: Path get() = root.resolve("receipts")
     val logs: Path get() = root.resolve("logs")
+    /** settings.json (DESIGN §3 "user-visible structure"): theme, exclusions, flags. */
+    val settings: Path get() = root.resolve("settings.json")
 
     /** Creates the layout on demand; callers must treat failures as fatal-to-feature, never as a prompt. */
     fun ensure(): Path {

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,10 +50,13 @@ import trashpanda.engine.execute.Restorer
 import trashpanda.engine.execute.Status
 import trashpanda.engine.report.Sizes
 import trashpanda.engine.scan.Planner
+import trashpanda.platform.AppDirs
+import trashpanda.platform.io.BinIndex
 import trashpanda.platform.winapi.ShellOp
 import trashpanda.rules.Risk
 import trashpanda.rules.RuleAction
 import trashpanda.rules.Verdict
+import java.nio.file.Path
 
 /**
  * Report — DESIGN §4.1 screen 002. Read-only review of a real scan: every item shows its
@@ -89,10 +93,21 @@ private fun prechecked(plan: Planner.Plan): Set<String> =
         .toSet()
 
 @Composable
-fun ReportScreen(plan: Planner.Plan, onBack: () -> Unit) {
+fun ReportScreen(
+    plan: Planner.Plan,
+    onBack: () -> Unit,
+    /** Where every Recycle Bin move really happens. Defaults to the real Windows shell call. */
+    port: RecyclePort = { p -> ShellOp.recycleToBin(p).let { RecycleOut(it.code, it.aborted) } },
+    /** Which Recycle Bin folders undo searches. Defaults to the real bin; tests inject fixtures. */
+    binFolders: (Path) -> List<Path> = { BinIndex.readableBinFolders(it) },
+    /** Where receipts are written. Defaults to %APPDATA%\TrashPanda\receipts. */
+    receiptsDir: Path = AppDirs.receipts,
+    /** Which thread performs scan-independent engine work. Defaults to Dispatchers.IO. */
+    worker: CoroutineDispatcher = Dispatchers.IO,
+) {
     val scope = rememberCoroutineScope()
 
-    val store = remember { ReceiptStore() }
+    val store = remember(receiptsDir) { ReceiptStore(receiptsDir) }
     var selectedPaths by remember(plan) { mutableStateOf(prechecked(plan)) }
     var busy by remember { mutableStateOf(false) }
     var confirmOpen by remember { mutableStateOf(false) }
@@ -132,10 +147,7 @@ fun ReportScreen(plan: Planner.Plan, onBack: () -> Unit) {
         failure = null
         scope.launch {
             try {
-                receipt = withContext(Dispatchers.IO) {
-                    val port = RecyclePort { p ->
-                        ShellOp.recycleToBin(p).let { RecycleOut(it.code, it.aborted) }
-                    }
+                receipt = withContext(worker) {
                     Executor(port, store).execute(chosen)
                 }
                 selectedPaths = emptySet()
@@ -154,7 +166,7 @@ fun ReportScreen(plan: Planner.Plan, onBack: () -> Unit) {
         failure = null
         scope.launch {
             try {
-                receipt = withContext(Dispatchers.IO) { Restorer(store).restore(r) }
+                receipt = withContext(worker) { Restorer(store, binFolders).restore(r) }
             } catch (t: Throwable) {
                 failure = "Undo stopped: ${t.message ?: t::class.simpleName}. The bin entry is still there."
             } finally {
