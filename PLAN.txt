@@ -1,0 +1,81 @@
+TRASHPANDA — MASTER PLAN
+======================================================
+Windows cleaner built for the AI-agent era.
+"eats your digital garbage. leaves your files alone."
+
+Decided (do not re-litigate)
+  Name .......... TrashPanda (raccoon = trash panda mascot)
+  Position ...... AI-era + dev-machine specialist (Windows GUI)
+  Stack ......... Kotlin + Compose Desktop (same skill as NP-Desktop)
+  UI theme ...... Dark glass (default) + Light milk + Terminal neon
+  Folder ........ C:\Users\Tauseef khan\git\web\trash panda\
+  License ....... MIT, public repo later: github.com/<you>/trashpanda
+
+Why this app exists (proof from own machine, 09 Nov 2026)
+  - C: drive was 84 GB full / 24 GB free on a 108 GB disk
+  - OpenCode chat DB: 8.1 GB | Temp: 7.9 GB | hermes bundles: 5.4 GB
+  - npm agent CLIs installed 2-3x each, gradle cache 1.9 GB,
+    build outputs 3 GB, playwright/hf caches ~1 GB
+  - No existing cleaner has a category for any of this.
+  - Manual cleanup today recovered 18.6 GB. TrashPanda automates it.
+
+The 10 rules of TrashPanda (safety first, always)
+  1. Scan reads ONLY. Deletion is a separate, explicit action.
+  2. Nothing is ever hard-deleted. Recycle Bin / undo folder only.
+  3. Risk chips: GREEN auto-check ok, AMBER user must tick, RED show only.
+  4. Locked/in-use files are skipped silently, never killed.
+  5. Junctions/symlinks are never followed (no loops, no surprise dirs).
+  6. Every attack shows the exact path + size BEFORE deletion.
+  7. A receipt is saved after every clean (before/after + file list).
+  8. No registry cleaner. No driver updater. No antivirus upsells. Ever.
+  9. No network calls in v0/v1. 100% local. No telemetry.
+  10. User data (Documents, project code, session DBs) = ALWAYS ask-first.
+
+MVP v0.1 scope (build only this first)
+  [ ] Scan engine: parallel walker, junction-skipping, fast sizing
+  [ ] Rule db (TOML): temp, win temp, npm/pip/uv/gradle/yarn caches,
+      build outputs, recents, browser caches, Recycle Bin, agent residue
+  [ ] "Agent residue" module (the flagship): opencode/claude/kilo/.
+      cursor caches + session DBs + playwright/patchright browsers
+  [ ] Compose UI: Home (donut + top junk) -> Scan -> Report (chips) ->
+      Execute -> Receipt. Undo list view.
+  [ ] Soft delete via Recycle Bin + undo receipt in %APPDATA%\TrashPanda
+  [ ] Exclusions list + settings + 3 themes
+  NOT in v0.1: scheduler, elevated ops, CLI, updater
+
+Phases
+  P0  Scaffold: Gradle skeleton, folders, CI (build only)      ~1 wk
+  P1  Engine + rule db + console report (no UI)                ~2 wk
+  P2  Minimal UI import: home/scan/report/execute              ~2 wk
+  P3  Receipts, undo, exclusions, settings, themes             ~2 wk
+  P4  "Agent residue" module deep-dive                         ~1-2 wk
+  P5  jpackage .msi/.exe packaging + alpha release             ~1 wk
+  (goal: usable alpha in ~2 months of evenings/weekends)
+
+v0.2+  Scheduler, elevated power tools (hibernation, DISM),
+       vhdx compaction w/ guard rails, CLI (dry-run --json),
+       duplicate finder (hash-proven), auto-updater.
+
+Success metrics
+  - Scan C:\Users\Tauseef khan fast (cold < 30s, warm < 10s target)
+  - Zero incidents: nothing user-defined ever removed
+  - First scan on demo machine finds >= 10 GB w/ 90% auto-checkable
+  - Portfolio: repo README w/ GIF, design doc (this), benchmarks
+
+Next actions (in order)
+  1. Graduate scaffold (P0) .................. DONE 09 Nov (build green, tests pass)
+  2. Write rule TOML for categories proven by today's manual clean ... DONE (30 rules)
+  3. Engine + console dry-run on this machine, measure ... DONE (Temp: 1.5 GB / 8.5 s,
+     junction guard verified, locked dirs skipped silently)
+  4. UI iterations
+
+Addendum (user requirements, 09 Nov — same safety rules apply)
+  R1  Every item describes itself in plain language (what it is, why safe/unsafe)
+  R2  Importance verdict per item: trash | regenerates | review | keep
+  R3  Guided Q&A mode: the app ASKS what to delete, category by category (--ask)
+  R4  Full cleaner feature set (thumbnails, shader cache, crash dumps, WER,
+      Windows.old, conda pkgs added to rule db)
+  R5  Multi-drive: scan every fixed drive, whole system (--all-drives)
+  R6  Public repo: github.com/Tauseef666-ctrl/Trashpanda (MIT, logo, app build)
+
+TBD at launch: final trademark sanity (raccoon/"TrashPanda" combos), codesign.

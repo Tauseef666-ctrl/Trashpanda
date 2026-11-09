@@ -1,0 +1,399 @@
+# trashpanda built-in rule db — v0.1 (DESIGN.md §6 + user addendum 09 Nov)
+# Every rule MUST carry a human explanation. No explanation, no deletion.
+# verdict answers "is it important? is it trash?" in plain words:
+#   trash | regenerates | review | keep
+# risk: green = auto-check ok · amber = user must tick · red = show only
+# action: recycle | report_only | never
+# Paths use forward slashes; matching is case-insensitive on Windows.
+
+schema = 1
+
+neverTouch = [
+  ".git", ".ssh", "id_rsa", "id_ed25519", ".gnupg", "wallet", "keystore",
+  "Documents", "Desktop",
+]
+
+# ---------- Group A — AI-agent residue (FLAGSHIP) ----------
+
+[[rule]]
+id = "A1"
+title = "OpenCode session database"
+explanation = "OpenCode keeps every chat you've ever had here. Old history. Close OpenCode first. Delete = that history is gone."
+risk = "amber"
+category = "ai_agents"
+patterns = ["%USERPROFILE%/.local/share/opencode/opencode.db"]
+minSizeMB = 10
+verdict = "review"
+action = "recycle"
+dropWhenPaths = ["opencode.db-wal", "opencode.db-shm"]
+
+[[rule]]
+id = "A2"
+title = "OpenCode stale build/upgrade caches"
+explanation = "Stale build and upgrade leftovers inside opencode cache/Temp dirs. They regenerate on the next run."
+risk = "green"
+category = "ai_agents"
+patterns = [
+  "%USERPROFILE%/.cache/opencode/**/*.exe",
+  "%LOCALAPPDATA%/Temp/opencode/opencode-upgrade-*.exe",
+]
+minAgeDays = 3
+verdict = "trash"
+action = "recycle"
+
+[[rule]]
+id = "A3"
+title = "Claude Code transcripts"
+explanation = "Plaintext chat + tool logs. Never auto-selected. Archive-only unless you tick it."
+risk = "red"
+category = "ai_agents"
+patterns = ["%USERPROFILE%/.claude/projects/**/*.jsonl"]
+verdict = "review"
+action = "report_only"
+
+[[rule]]
+id = "A4"
+title = "npm global tools (installed more than once)"
+explanation = "Real CLI tools installed 2-3x each by agents. We list each copy; you pick which survive."
+risk = "amber"
+category = "ai_agents"
+patterns = ["%APPDATA%/npm/node_modules/*"]
+minSizeMB = 50
+verdict = "review"
+action = "recycle"
+
+[[rule]]
+id = "A5"
+title = "Playwright / patchright browsers"
+explanation = "Test browsers downloaded by agents. Any 'npx playwright install' re-fetches them on demand."
+risk = "green"
+category = "ai_agents"
+patterns = ["%LOCALAPPDATA%/ms-playwright/*"]
+minAgeDays = 14
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "A6"
+title = "Agent-bundled Chromium"
+explanation = "A third-party agent shipped its own Chromium copy. Re-downloads automatically when used."
+risk = "amber"
+category = "ai_agents"
+patterns = ["%LOCALAPPDATA%/hermes/tools/chromium-*"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "A7"
+title = "AI model caches (HuggingFace / Ollama)"
+explanation = "A 16 GB model is a 16 GB re-download. Shown for awareness, never pre-selected."
+risk = "red"
+category = "ai_agents"
+patterns = [
+  "%USERPROFILE%/.cache/huggingface",
+  "%USERPROFILE%/.ollama/models",
+]
+verdict = "review"
+action = "report_only"
+
+[[rule]]
+id = "A8"
+title = "Agent IDE caches (Cursor / Antigravity)"
+explanation = "Cache subdirs only. Extensions, settings and sign-in state are never touched."
+risk = "amber"
+category = "ai_agents"
+patterns = [
+  "%LOCALAPPDATA%/cursor-agent/Cache*",
+  "%LOCALAPPDATA%/cursor-agent/CachedData",
+  "%LOCALAPPDATA%/cursor-agent/GPUCache",
+  "%LOCALAPPDATA%/Antigravity IDE/Cache*",
+  "%LOCALAPPDATA%/Antigravity IDE/CachedData",
+  "%LOCALAPPDATA%/Antigravity IDE/GPUCache",
+]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "A9"
+title = "VS Code caches"
+explanation = "VS Code rebuilds these caches on next launch. Safe when Code.exe is not running."
+risk = "green"
+category = "ai_agents"
+patterns = [
+  "%APPDATA%/Code/Cache",
+  "%APPDATA%/Code/Code Cache",
+  "%APPDATA%/Code/CachedData",
+  "%APPDATA%/Code/GPUCache",
+  "%APPDATA%/Code/logs",
+]
+verdict = "regenerates"
+action = "recycle"
+dropWhenPaths = ["workspaceStorage"]
+
+# ---------- Group B — Dev toolchain caches ----------
+
+[[rule]]
+id = "B1"
+title = "npm cache"
+explanation = "npm's download cache. 'npm cache verify' refills it; nothing of yours lives here."
+risk = "green"
+category = "dev_toolchains"
+patterns = ["%LOCALAPPDATA%/npm-cache/**"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B2"
+title = "Gradle caches"
+explanation = "Downloaded dependencies and build cache. The next Gradle build re-downloads what it needs."
+risk = "green"
+category = "dev_toolchains"
+patterns = ["%USERPROFILE%/.gradle/caches/**"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B3"
+title = "Gradle wrapper distributions"
+explanation = "Old Gradle versions shipped by projects. Each project re-downloads its version when needed."
+risk = "amber"
+category = "dev_toolchains"
+patterns = ["%USERPROFILE%/.gradle/wrapper/dists/*"]
+minAgeDays = 30
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B4"
+title = "pip / uv caches"
+explanation = "Python package download caches. Re-fetched on the next install; your venvs are untouched."
+risk = "green"
+category = "dev_toolchains"
+patterns = [
+  "%LOCALAPPDATA%/pip/cache/**",
+  "%LOCALAPPDATA%/uv/cache/**",
+]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B5"
+title = "Cargo registry cache"
+explanation = "Crates downloaded from crates.io. 'cargo build' re-fetches anything missing."
+risk = "green"
+category = "dev_toolchains"
+patterns = ["%USERPROFILE%/.cargo/registry/**"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B6"
+title = "pnpm / yarn / bun stores"
+explanation = "Package stores and caches. Content-addressed, safe to prune; installs re-hydrate."
+risk = "green"
+category = "dev_toolchains"
+patterns = [
+  "%LOCALAPPDATA%/pnpm/store*",
+  "%LOCALAPPDATA%/Yarn/Cache/**",
+  "%LOCALAPPDATA%/bun/install/cache/**",
+]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B7"
+title = "Electron builder caches"
+explanation = "Cached Electron binaries and build artifacts for packaging desktop apps. Re-downloaded on demand."
+risk = "green"
+category = "dev_toolchains"
+patterns = [
+  "%LOCALAPPDATA%/electron/Cache/**",
+  "%LOCALAPPDATA%/electron-builder/Cache/**",
+]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "B8"
+title = "Conda package cache"
+explanation = "Downloaded conda packages. New environments re-fetch whatever they need."
+risk = "green"
+category = "dev_toolchains"
+patterns = ["%USERPROFILE%/.conda/pkgs/**"]
+verdict = "regenerates"
+action = "recycle"
+
+# ---------- Group C — Build outputs (inside configured project roots only) ----------
+
+[[rule]]
+id = "C1"
+title = "Build output directories"
+explanation = "Machine-generated build output. 'build'/'dist'/'out'/'target' regenerate from source with one command."
+risk = "green"
+category = "build_outputs"
+patterns = [
+  "**/build",
+  "**/dist",
+  "**/out",
+  "**/target",
+  "**/.next",
+  "**/__pycache__",
+  "**/.dart_tool",
+]
+maxDepth = 6
+verdict = "regenerates"
+action = "recycle"
+dropWhenPaths = [".git"]
+
+[[rule]]
+id = "C2"
+title = "node_modules"
+explanation = "Dependencies, not code. One 'npm install' (or your lockfile tool) rebuilds it exactly."
+risk = "amber"
+category = "build_outputs"
+patterns = ["**/node_modules"]
+maxDepth = 6
+verdict = "regenerates"
+action = "recycle"
+dropWhenPaths = [".git"]
+
+# ---------- Group D — Windows housekeeping ----------
+
+[[rule]]
+id = "D1"
+title = "User temp folder"
+explanation = "Your Temp folder, minus anything modified in the last 24 h and minus live agent dirs."
+risk = "green"
+category = "windows"
+patterns = ["%LOCALAPPDATA%/Temp/**"]
+minAgeDays = 1
+verdict = "trash"
+action = "recycle"
+dropWhenPaths = ["TrashPanda"]
+
+[[rule]]
+id = "D3"
+title = "Recycle Bin size"
+explanation = "The Recycle Bin is TrashPanda's undo store — emptying it is always your manual call."
+risk = "red"
+category = "recycle_bin"
+patterns = ["$RECYCLE.BIN"]
+verdict = "review"
+action = "report_only"
+
+[[rule]]
+id = "D4"
+title = "Hibernation file (hiberfil.sys)"
+explanation = "Several GB of RAM-image on disk. Never file-deleted; TrashPanda offers a guided 'powercfg /h off' task (v0.2)."
+risk = "red"
+category = "windows"
+patterns = ["C:/hiberfil.sys"]
+verdict = "review"
+action = "report_only"
+
+[[rule]]
+id = "D5"
+title = "Windows system stores"
+explanation = "Windows\\Installer, WinSxS, DriverStore and pagefile.sys are hard-banned from file operations. WinSxS cleanup only ever happens via DISM (v0.2)."
+risk = "red"
+category = "windows"
+patterns = [
+  "C:/Windows/Installer/**",
+  "C:/Windows/WinSxS/**",
+  "C:/Windows/System32/DriverStore/**",
+]
+verdict = "keep"
+action = "never"
+
+[[rule]]
+id = "D7"
+title = "Thumbnail cache"
+explanation = "Explorer's picture/video thumbnails. Windows rebuilds them as you browse folders again."
+risk = "green"
+category = "windows"
+patterns = ["%LOCALAPPDATA%/Microsoft/Windows/Explorer/thumbcache_*.db"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "D8"
+title = "DirectX shader cache"
+explanation = "Compiled shader blobs for games and GPU apps. Rebuilt automatically on next run."
+risk = "green"
+category = "windows"
+patterns = ["%LOCALAPPDATA%/D3DSCache/**"]
+verdict = "regenerates"
+action = "recycle"
+
+[[rule]]
+id = "D9"
+title = "Crash dumps"
+explanation = "Leftovers from crashed apps. Useful only while debugging a specific crash; older ones are dead weight."
+risk = "amber"
+category = "windows"
+patterns = ["%LOCALAPPDATA%/CrashDumps/**"]
+minAgeDays = 7
+verdict = "trash"
+action = "recycle"
+
+[[rule]]
+id = "D10"
+title = "Windows Error Reporting queue"
+explanation = "Queued error reports to Microsoft. Safe to clear; new reports queue up fresh when needed."
+risk = "amber"
+category = "windows"
+patterns = [
+  "%PROGRAMDATA%/Microsoft/Windows/WER/ReportQueue/**",
+  "%PROGRAMDATA%/Microsoft/Windows/WER/ReportArchive/**",
+]
+verdict = "trash"
+action = "recycle"
+
+[[rule]]
+id = "D11"
+title = "Old Windows installation (Windows.old)"
+explanation = "Your previous Windows and a 10-day rollback safety net. Delete only when the new install feels right."
+risk = "amber"
+category = "windows"
+patterns = ["C:/Windows.old/**"]
+verdict = "review"
+action = "recycle"
+
+# ---------- Group E — Browser caches ----------
+
+[[rule]]
+id = "E1"
+title = "Browser caches (Chrome / Edge / Brave / Firefox)"
+explanation = "Cache, GPU cache and service-worker cache per profile. Bookmarks, passwords, cookies and history are never touched."
+risk = "green"
+category = "browsers"
+patterns = [
+  "%LOCALAPPDATA%/Google/Chrome/User Data/*/Cache/**",
+  "%LOCALAPPDATA%/Google/Chrome/User Data/*/Code Cache/**",
+  "%LOCALAPPDATA%/Google/Chrome/User Data/*/GPUCache/**",
+  "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/Cache/**",
+  "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/Code Cache/**",
+  "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/GPUCache/**",
+  "%LOCALAPPDATA%/BraveSoftware/Brave-Browser/User Data/*/Cache/**",
+  "%LOCALAPPDATA%/BraveSoftware/Brave-Browser/User Data/*/Code Cache/**",
+  "%APPDATA%/Mozilla/Firefox/Profiles/*/cache2/**",
+]
+verdict = "regenerates"
+action = "recycle"
+dropWhenPaths = ["Cookies", "Login Data", "Bookmarks", "Local Storage", "IndexedDB"]
+
+# ---------- Group F — Large personal files (report-only forever) ----------
+
+[[rule]]
+id = "F1"
+title = "Large personal files"
+explanation = "Files over 200 MB in Downloads/Desktop. TrashPanda explains but never checks them. Your data = ask-first, always."
+risk = "red"
+category = "personal"
+patterns = [
+  "%USERPROFILE%/Downloads/**",
+  "%USERPROFILE%/Desktop/**",
+]
+minSizeMB = 200
+verdict = "review"
+action = "report_only"

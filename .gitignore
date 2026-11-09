@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Kotlin
+.kotlin/
+
+# OS / Windows junk
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# App-local artifacts
+*.log

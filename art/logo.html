@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>html,body{margin:0;padding:0;overflow:hidden;}</style></head>
+<body>
+<svg id="icon" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#131C2B"/>
+      <stop offset="1" stop-color="#0B0F14"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5A6472"/>
+      <stop offset="1" stop-color="#414B59"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square glass tile -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="none" stroke="#1F2937" stroke-width="10"/>
+
+  <!-- subtle glass sheen -->
+  <path d="M32 252 A220 220 0 0 1 252 32 L760 32 A900 900 0 0 0 32 760 Z" fill="#FFFFFF" opacity="0.03"/>
+
+  <!-- ears -->
+  <circle cx="300" cy="300" r="118" fill="url(#fur)"/>
+  <circle cx="724" cy="300" r="118" fill="url(#fur)"/>
+  <circle cx="300" cy="300" r="62" fill="#2A323E"/>
+  <circle cx="724" cy="300" r="62" fill="#2A323E"/>
+
+  <!-- head -->
+  <circle cx="512" cy="560" r="300" fill="url(#fur)"/>
+
+  <!-- muzzle -->
+  <ellipse cx="512" cy="672" rx="150" ry="112" fill="#C9CFD8"/>
+  <circle cx="512" cy="612" r="34" fill="#1B2129"/>
+  <path d="M512 646 L512 690 M512 690 Q462 738 424 700 M512 690 Q562 738 600 700" stroke="#5B6470" stroke-width="14" fill="none" stroke-linecap="round"/>
+
+  <!-- bandit mask with mint eyes -->
+  <path d="M232 480 Q512 560 792 480 L760 620 Q512 700 264 620 Z" fill="#232B38"/>
+  <circle cx="400" cy="560" r="58" fill="#34D399"/>
+  <circle cx="624" cy="560" r="58" fill="#34D399"/>
+  <circle cx="400" cy="560" r="24" fill="#0B0F14"/>
+  <circle cx="624" cy="560" r="24" fill="#0B0F14"/>
+
+  <!-- broom over the shoulder -->
+  <g transform="rotate(24 820 240)">
+    <rect x="806" y="120" width="28" height="560" rx="14" fill="#8A929E"/>
+    <path d="M768 660 L872 660 L904 830 L736 830 Z" fill="#34D399"/>
+    <path d="M760 700 L880 700 M752 750 L888 750" stroke="#2BBd85" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>
+</body>
+</html>
