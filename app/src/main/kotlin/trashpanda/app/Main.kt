@@ -75,7 +75,7 @@ enum class ScanScope(val label: String) {
     DEEP("drives"),
 }
 
-private enum class Screen { HOME, REPORT }
+private enum class Screen { HOME, REPORT, HISTORY }
 
 fun main() = application {
     Window(
@@ -125,6 +125,7 @@ fun main() = application {
                         },
                         onScan = ::scanAndOpen,
                         onReview = { screen = Screen.REPORT },
+                        onHistory = { screen = Screen.HISTORY },
                     )
                     Screen.REPORT -> {
                         val current = plan
@@ -142,11 +143,13 @@ fun main() = application {
                                 },
                                 onScan = ::scanAndOpen,
                                 onReview = { screen = Screen.REPORT },
+                                onHistory = { screen = Screen.HISTORY },
                             )
                         } else {
                             ReportScreen(current, onBack = { screen = Screen.HOME })
                         }
                     }
+                    Screen.HISTORY -> HistoryScreen(onBack = { screen = Screen.HOME })
                 }
                 Scanlines()
             }
@@ -177,6 +180,7 @@ fun HomeScreen(
     onPickDrive: (String, Boolean) -> Unit,
     onScan: () -> Unit,
     onReview: () -> Unit,
+    onHistory: () -> Unit = {},
 ) {
     val drives = remember { Drives.volumes() }
     val totalBytes = drives.sumOf { it.totalBytes }
@@ -229,6 +233,9 @@ fun HomeScreen(
                     fontSize = 13.sp,
                     color = Tokens.textDim,
                 )
+            }
+            TextButton(onClick = onHistory) {
+                Text("History", color = Tokens.textDim, fontSize = 13.sp, modifier = Modifier.padding(end = 4.dp))
             }
             ThemeSwitch(current = theme, onPick = onTheme)
         }
