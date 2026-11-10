@@ -33,7 +33,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "Trashpanda"
-            packageVersion = "0.2.0"
+            packageVersion = "0.2.1"
             vendor = "Trashpanda"
             description = "Eats your digital garbage. Leaves your files alone."
 
