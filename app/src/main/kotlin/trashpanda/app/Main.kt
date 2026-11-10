@@ -452,16 +452,18 @@ private fun autoCheckableShare(plan: Planner.Plan?): Int? {
 }
 
 /**
- * Real read-only engine pass (user requirement: drives are scanned ONLY when the user
- * picks them — nothing is ever auto-swept). FAST: user junk hotspots (temp, crash
- * dumps, WER) at full walking depth. DEEP: the fast roots AGAIN +, for each PICKED
- * fixed drive, its Windows\Temp (full depth) and the drive root itself (shallow depth),
- * merged app-side (paths de-duplicated, counters summed).
+ * Real read-only engine pass (user requirement: the scan covers EXACTLY what the user
+ * picked — never a side-sweep of other drives). FAST: user junk hotspots (temp, crash
+ * dumps, WER) at full walking depth. DEEP: for each PICKED drive only — its
+ * Windows\Temp at full depth (depth 12) plus the drive root at depth 8 — merged
+ * app-side (paths de-duplicated, counters summed).
  */
 private fun realScan(scope: ScanScope, pickedDrives: Set<String>): Planner.Plan {
     val planner = Planner(RuleCatalog.loadBuiltin())
-    val fast = planner.planFromDisk(userJunkRoots())
-    if (scope == ScanScope.FAST) return fast
+    if (scope == ScanScope.FAST) return planner.planFromDisk(userJunkRoots())
+    if (pickedDrives.isEmpty()) {
+        return Planner.Plan(items = emptyList(), deniedDirs = 0, reparseMirrors = 0, scannedRoots = emptyList())
+    }
 
     val perDrive = pickedDrives.sorted().map { root ->
         val rootPath = Path.of(root)
@@ -470,7 +472,7 @@ private fun realScan(scope: ScanScope, pickedDrives: Set<String>): Planner.Plan 
             planner.planFromDisk(listOf(rootPath), maxDepth = 8),
         ))
     }
-    return mergePlans(listOf(fast) + perDrive)
+    return mergePlans(perDrive)
 }
 
 /** User-writable junk hotspots every Windows machine has. planFromDisk skips missing roots. */

@@ -39,6 +39,7 @@ compose.desktop {
 
             windows {
                 menu = true
+                menuGroup = "Trashpanda"
                 shortcut = true
                 dirChooser = true
                 iconFile = project.file("icon.ico")
