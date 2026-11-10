@@ -94,20 +94,28 @@ fun main() = application {
         var scope by remember { mutableStateOf(ScanScope.FAST) }
         var pickedDrives by remember { mutableStateOf(emptySet<String>()) }
         var exclusions by remember { mutableStateOf(Settings.loadExclusions()) }
+        var scanStatus by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(theme, exclusions) { Settings.saveAll(theme, exclusions) }
         val jobs = rememberCoroutineScope()
 
         fun scanAndOpen() {
             if (scanning) return
             scanning = true
+            scanStatus = null
             jobs.launch {
                 try {
-                    val raw = withContext(Dispatchers.IO) { realScan(scope, pickedDrives) }
+                    val raw = withContext(Dispatchers.IO) {
+                        realScan(scope, pickedDrives) { count, path ->
+                            // Engine's throttled tick (walking thread) — snapshots are thread-safe.
+                            scanStatus = "reading ${path.parent ?: path} · ${String.format("%,d", count)} item(s)  — read-only"
+                        }
+                    }
                     // Exclusions apply to EVERY scope: user-forbidden paths never surface.
                     plan = applyExclusions(raw, exclusions)
                     screen = Screen.REPORT
                 } finally {
                     scanning = false
+                    scanStatus = null
                 }
             }
         }
@@ -130,6 +138,7 @@ fun main() = application {
                         onReview = { screen = Screen.REPORT },
                         onHistory = { screen = Screen.HISTORY },
                         onExclusions = { screen = Screen.EXCLUSIONS },
+                        scanStatus = scanStatus,
                     )
                     Screen.REPORT -> {
                         val current = plan
@@ -149,6 +158,7 @@ fun main() = application {
                                 onReview = { screen = Screen.REPORT },
                                 onHistory = { screen = Screen.HISTORY },
                                 onExclusions = { screen = Screen.EXCLUSIONS },
+                                scanStatus = scanStatus,
                             )
                         } else {
                             ReportScreen(current, onBack = { screen = Screen.HOME })
@@ -193,6 +203,7 @@ fun HomeScreen(
     onReview: () -> Unit,
     onHistory: () -> Unit = {},
     onExclusions: () -> Unit = {},
+    scanStatus: String? = null,
 ) {
     val drives = remember { Drives.volumes() }
     val totalBytes = drives.sumOf { it.totalBytes }
@@ -438,6 +449,16 @@ fun HomeScreen(
                 ) {
                     Text(ctaLabel, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
+                // Live progress while a real scan runs (streams from the engine's
+                // throttled tick hook — honest counts, latest path, no fake percent).
+                if (scanning && scanStatus != null) {
+                    Text(
+                        scanStatus!!,
+                        fontSize = 12.5.sp,
+                        color = Tokens.textDim,
+                        fontFamily = if (Tokens.mono) FontFamily.Monospace else FontFamily.Default,
+                    )
+                }
 
                 if (plan != null && !scanning) {
                     TextButton(
@@ -480,9 +501,15 @@ private fun autoCheckableShare(plan: Planner.Plan?): Int? {
  * Windows\Temp at full depth (depth 12) plus the drive root at depth 8 — merged
  * app-side (paths de-duplicated, counters summed).
  */
-private fun realScan(scope: ScanScope, pickedDrives: Set<String>): Planner.Plan {
+private fun realScan(
+    scope: ScanScope,
+    pickedDrives: Set<String>,
+    onTick: (Long, java.nio.file.Path) -> Unit = { _, _ -> },
+): Planner.Plan {
     val planner = Planner(RuleCatalog.loadBuiltin())
-    if (scope == ScanScope.FAST) return planner.planFromDisk(userJunkRoots())
+    if (scope == ScanScope.FAST) {
+        return planner.planFromDisk(userJunkRoots(), maxDepth = 12, onTick = onTick)
+    }
     if (pickedDrives.isEmpty()) {
         return Planner.Plan(items = emptyList(), deniedDirs = 0, reparseMirrors = 0, scannedRoots = emptyList())
     }
@@ -490,8 +517,8 @@ private fun realScan(scope: ScanScope, pickedDrives: Set<String>): Planner.Plan 
     val perDrive = pickedDrives.sorted().map { root ->
         val rootPath = Path.of(root)
         mergePlans(listOf(
-            planner.planFromDisk(listOf(rootPath.resolve("Windows").resolve("Temp")), maxDepth = 12),
-            planner.planFromDisk(listOf(rootPath), maxDepth = 8),
+            planner.planFromDisk(listOf(rootPath.resolve("Windows").resolve("Temp")), maxDepth = 12, onTick = onTick),
+            planner.planFromDisk(listOf(rootPath), maxDepth = 8, onTick = onTick),
         ))
     }
     return mergePlans(perDrive)

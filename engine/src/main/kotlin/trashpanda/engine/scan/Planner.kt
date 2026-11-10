@@ -34,30 +34,21 @@ class Planner(private val catalog: LoadedCatalog, private val env: Map<String, S
         val recycleCount: Int get() = items.count { it.action == RuleAction.RECYCLE }
     }
 
-    fun planFromDisk(roots: List<Path>): Plan {
-        val scanner = Scanner()
-        val all = mutableListOf<Scanner.WalkSummary>()
-        val walked = mutableListOf<Path>()
-        for (root in roots) {
-            if (!root.toFile().exists()) continue
-            all.add(scanner.walk(root, maxDepth = 12))
-            walked.add(root)
-        }
-        return planFromWalked(all, walked)
-    }
+    fun planFromDisk(roots: List<Path>): Plan = planFromDisk(roots, maxDepth = 12)
+
+    fun planFromDisk(roots: List<Path>, maxDepth: Int): Plan = planFromDisk(roots, maxDepth, onTick = null)
 
     /**
-     * Same as [planFromDisk], but with an explicit walk depth — drive roots get
-     * shallow passes (4) so an all-drives scan stays fast, while user dirs may
-     * need the full 12.
+     * [onTick] (see [Scanner.walk]) fires on the walking thread — (latest count, latest
+     * path) — for each scanned root. UIs render it verbatim; the plan itself is untouched.
      */
-    fun planFromDisk(roots: List<Path>, maxDepth: Int): Plan {
+    fun planFromDisk(roots: List<Path>, maxDepth: Int, onTick: ((Long, Path) -> Unit)?): Plan {
         val scanner = Scanner()
         val all = mutableListOf<Scanner.WalkSummary>()
         val walked = mutableListOf<Path>()
         for (root in roots) {
             if (!root.toFile().exists()) continue
-            all.add(scanner.walk(root, maxDepth = maxDepth))
+            all.add(scanner.walk(root, maxDepth = maxDepth, onTick = onTick))
             walked.add(root)
         }
         return planFromWalked(all, walked)

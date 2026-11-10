@@ -37,10 +37,18 @@ class Scanner(
         val reparseMirrors: Int,
     )
 
-    fun walk(root: Path, maxDepth: Int): WalkSummary {
+    fun walk(root: Path, maxDepth: Int): WalkSummary = walk(root, maxDepth, onTick = null)
+
+    /**
+     * [onTick] is a throttled progress hook for UIs: invoked every [tickEvery]
+     * harvested entries with (count, latestPath), on the walking thread. Read-only
+     * guarantee unchanged — the hook must never touch the disk.
+     */
+    fun walk(root: Path, maxDepth: Int, onTick: ((Long, Path) -> Unit)? = null, tickEvery: Long = 256): WalkSummary {
         val entries = ConcurrentLinkedQueue<Entry>()
         val denied = AtomicLong()
         val mirrors = AtomicLong()
+        val visited = java.util.concurrent.atomic.AtomicLong()
 
         Files.walkFileTree(
             root,
@@ -71,6 +79,11 @@ class Scanner(
                                 mtime = attrs.lastModifiedTime(),
                             ),
                         )
+                    }
+                    // Progress hook: throttled so UIs stay responsive on 20k+ piles.
+                    if (onTick != null) {
+                        val n = visited.incrementAndGet()
+                        if (n % tickEvery == 0L) onTick(n, file)
                     }
                     return FileVisitResult.CONTINUE
                 }
