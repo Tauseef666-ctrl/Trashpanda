@@ -45,18 +45,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import trashpanda.engine.report.Sizes
 import trashpanda.engine.scan.Planner
+import trashpanda.platform.winapi.Drives
 import trashpanda.rules.RuleAction
 import trashpanda.rules.RuleCatalog
 import trashpanda.rules.Risk
 import java.nio.file.Path
 
 /**
- * trashpanda v0.2 — Home "Drive health" (DESIGN §4.1 screen 001) + Report (002).
+ * Trashpanda v0.2 — Home "Drive health" (DESIGN §4.1 screen 001) + Report (002).
  * Scan runs the REAL read-only engine (Planner) over the machine's user-writable junk
  * hotspots; the report screen wires the same Executor the CLI uses — Recycle Bin only,
  * receipt, undo. GUI and console share one engine path.
@@ -67,12 +69,19 @@ private fun windowIcon(): java.awt.Image? = runCatching {
     javax.swing.ImageIcon(url).image
 }.getOrNull()
 
+/** Scan scope picked on Home: quick user-temp sweep vs the deep drive sweep the user PICKS. */
+enum class ScanScope(val label: String) {
+    FAST("temp + apps"),
+    DEEP("drives"),
+}
+
 private enum class Screen { HOME, REPORT }
 
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
-        title = "trashpanda — eats your digital garbage. leaves your files alone.",
+        title = "Trashpanda — eats your digital garbage. Leaves your files alone.",
+        state = rememberWindowState(width = 1120.dp, height = 800.dp),
     ) {
         LaunchedEffect(Unit) {
             windowIcon()?.let { window.iconImage = it }
@@ -82,15 +91,17 @@ fun main() = application {
         var plan by remember { mutableStateOf<Planner.Plan?>(null) }
         var scanning by remember { mutableStateOf(false) }
         var theme by remember { mutableStateOf(Settings.loadTheme()) }
+        var scope by remember { mutableStateOf(ScanScope.FAST) }
+        var pickedDrives by remember { mutableStateOf(emptySet<String>()) }
         LaunchedEffect(theme) { Settings.saveTheme(theme) }
-        val scope = rememberCoroutineScope()
+        val jobs = rememberCoroutineScope()
 
         fun scanAndOpen() {
             if (scanning) return
             scanning = true
-            scope.launch {
+            jobs.launch {
                 try {
-                    plan = withContext(Dispatchers.IO) { realScan() }
+                    plan = withContext(Dispatchers.IO) { realScan(scope, pickedDrives) }
                     screen = Screen.REPORT
                 } finally {
                     scanning = false
@@ -106,6 +117,12 @@ fun main() = application {
                         scanning = scanning,
                         theme = theme,
                         onTheme = { theme = it },
+                        scope = scope,
+                        onScope = { scope = it },
+                        pickedDrives = pickedDrives,
+                        onPickDrive = { root, add ->
+                            pickedDrives = if (add) pickedDrives + root else pickedDrives - root
+                        },
                         onScan = ::scanAndOpen,
                         onReview = { screen = Screen.REPORT },
                     )
@@ -117,6 +134,12 @@ fun main() = application {
                                 scanning = scanning,
                                 theme = theme,
                                 onTheme = { theme = it },
+                                scope = scope,
+                                onScope = { scope = it },
+                                pickedDrives = pickedDrives,
+                                onPickDrive = { root, add ->
+                                    pickedDrives = if (add) pickedDrives + root else pickedDrives - root
+                                },
                                 onScan = ::scanAndOpen,
                                 onReview = { screen = Screen.REPORT },
                             )
@@ -131,15 +154,9 @@ fun main() = application {
     }
 }
 
-// Pre-first-scan fallback for the hero card. Junk lists below come from the real plan.
-private data class Snapshot(
-    val diskTotalGb: Double = 108.0,
-    val diskFreeGb: Double = 24.0,
-    val reclaimableBytes: Long = 18_600_000_000L,
-    val junkItems: Int = 1204,
-    val autoCheckPct: Int = 92,
-    val needsTickPct: Int = 8,
-)
+// Pre-first-scan the hero shows REAL drive facts (computed live from the machine).
+// Junk lists and reclaim numbers exist only after a real scan — never invented.
+// Drive volumes come from platform's Windows API bridge: true storage TYPES included.
 
 private data class JunkRow(
     val title: String,
@@ -154,14 +171,20 @@ fun HomeScreen(
     scanning: Boolean,
     theme: ThemeName,
     onTheme: (ThemeName) -> Unit,
+    scope: ScanScope,
+    onScope: (ScanScope) -> Unit,
+    pickedDrives: Set<String>,
+    onPickDrive: (String, Boolean) -> Unit,
     onScan: () -> Unit,
     onReview: () -> Unit,
 ) {
-    val snapshot = remember { Snapshot() }
-    val reclaimable = plan?.recyclableBytes ?: snapshot.reclaimableBytes
-    val junkCount = plan?.items?.size ?: snapshot.junkItems
-    val autoPct = autoCheckableShare(plan) ?: snapshot.autoCheckPct
-    val tickPct = plan?.let { maxOf(0, 100 - autoPct) } ?: snapshot.needsTickPct
+    val drives = remember { Drives.volumes() }
+    val totalBytes = drives.sumOf { it.totalBytes }
+    val freeBytes = drives.sumOf { it.freeBytes }
+    val reclaimable = plan?.recyclableBytes
+    val junkCount = plan?.items?.size
+    val autoPct = autoCheckableShare(plan)
+    val tickPct = plan?.let { maxOf(0, 100 - (autoPct ?: 100)) }
 
     // Top junk categories straight from the real plan (fallback: none — say so honestly).
     val junkRows: List<JunkRow> = remember(plan) {
@@ -197,9 +220,12 @@ fun HomeScreen(
             Column(Modifier.weight(1f)) {
                 Text("Drive health", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.text)
                 Text(
-                    "C:\\ — ${if (plan == null) "Bin hasn't looked yet" else "live read-only scan"} · found " +
-                        "${Sizes.human(reclaimable)} across $junkCount item(s). " +
-                        "Scanning never changes the disk.",
+                    if (plan == null) {
+                        "Not scanned yet. Every scan is read-only — it never changes the disk."
+                    } else {
+                        "Live read-only scan · found ${Sizes.human(plan.recyclableBytes)} across " +
+                            "${plan.items.size} item(s) over ${plan.scannedRoots.size} root(s). Nothing has moved yet."
+                    },
                     fontSize = 13.sp,
                     color = Tokens.textDim,
                 )
@@ -207,7 +233,42 @@ fun HomeScreen(
             ThemeSwitch(current = theme, onPick = onTheme)
         }
 
-        // Hero: donut + stats
+        // Sweep scope — quick user-temp pass or the drives the user must PICK
+        // (user requirement: nothing is scanned without an explicit switch).
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Sweep scope", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Tokens.textDim)
+            ScopeSwitch(current = scope, onPick = onScope)
+        }
+        if (scope == ScanScope.DEEP) {
+            val fixedRoots = remember { Drives.fixedVolumes().map { it.root } }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (pickedDrives.isEmpty()) "pick a drive:" else "sweeping:",
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Tokens.textDim,
+                )
+                fixedRoots.forEach { root ->
+                    val active = root in pickedDrives
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (active) Tokens.primary.copy(alpha = 0.16f) else Color.Transparent)
+                            .border(1.dp, if (active) Tokens.primary else Tokens.border, RoundedCornerShape(999.dp))
+                            .clickable { onPickDrive(root, !active) }
+                            .padding(horizontal = 11.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            root.trimEnd('\\'),
+                            fontSize = 11.sp,
+                            color = if (active) Tokens.primary else Tokens.textDim,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Hero: donut + stats — every ready drive stacked into one picture, real
+        // numbers only (per-drive breakdown underneath; nothing invented pre-scan).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -218,25 +279,69 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(28.dp),
         ) {
+            val reclaimFraction =
+                if (totalBytes <= 0L) 0f
+                else ((reclaimable ?: 0L) / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(190.dp)) {
                 StorageDonut(
-                    usedFraction = ((snapshot.diskTotalGb - snapshot.diskFreeGb) / snapshot.diskTotalGb).toFloat(),
-                    reclaimFraction = 0.172f,
+                    usedFraction = if (totalBytes <= 0L) 0f else
+                        ((totalBytes - freeBytes) / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f),
+                    reclaimFraction = reclaimFraction,
                     modifier = Modifier.size(190.dp),
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("24 GB", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Tokens.text)
-                    Text("free of 108 GB", fontSize = 12.sp, color = Tokens.textDim)
+                    Text(
+                        if (totalBytes <= 0L) "—" else Sizes.human(freeBytes),
+                        fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Tokens.text,
+                    )
+                    Text(
+                        if (totalBytes <= 0L) "free space unknown" else "free of ${Sizes.human(totalBytes)}",
+                        fontSize = 12.sp, color = Tokens.textDim,
+                    )
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("Reclaimable now", Sizes.human(reclaimable), Tokens.primary, Modifier.weight(1f))
-                    StatCard("Junk items", junkCount.toString(), Tokens.text, Modifier.weight(1f))
+                    StatCard("Reclaimable now", reclaimable?.let { Sizes.human(it) } ?: "not scanned", Tokens.primary, Modifier.weight(1f))
+                    StatCard("Junk items", junkCount?.toString() ?: "not scanned", Tokens.text, Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("Auto-checkable", "$autoPct%", Tokens.riskSafe, Modifier.weight(1f))
-                    StatCard("Needs your tick", "$tickPct%", Tokens.riskReview, Modifier.weight(1f))
+                    StatCard("Auto-checkable", autoPct?.let { "$it%" } ?: "not scanned", Tokens.riskSafe, Modifier.weight(1f))
+                    StatCard("Needs your tick", tickPct?.let { "$it%" } ?: "not scanned", Tokens.riskReview, Modifier.weight(1f))
+                }
+            }
+        }
+
+        // Per-drive storage strip — the "stack" that shows every drive and its type.
+        if (drives.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                drives.forEach { d ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Tokens.cardInset)
+                            .border(1.dp, Tokens.border, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Column {
+                            Text(
+                                "${d.root.trimEnd('\\')} · ${d.kind.label.uppercase()}",
+                                fontSize = 10.sp,
+                                color = Tokens.textDim,
+                                letterSpacing = 0.8.sp,
+                            )
+                            Text(
+                                "${Sizes.human(d.freeBytes)} free of ${Sizes.human(d.totalBytes)}",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Tokens.text,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -290,9 +395,17 @@ fun HomeScreen(
                 }
 
                 // The CTA runs the REAL read-only engine, then opens the report.
+                // Deep mode only arms once the user picked at least one drive.
+                val ctaLabel = when {
+                    scanning -> "Bin is sweeping… (read-only)"
+                    scope == ScanScope.FAST -> "Scan now — temp + crash dumps (read-only)"
+                    pickedDrives.isEmpty() -> "Pick a drive to sweep first"
+                    else -> "Scan " + pickedDrives.sorted().joinToString(" + ") { it.trimEnd('\\') } +
+                        " — deep sweep (read-only)"
+                }
                 Button(
                     onClick = onScan,
-                    enabled = !scanning,
+                    enabled = !scanning && (scope == ScanScope.FAST || pickedDrives.isNotEmpty()),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Tokens.primary,
@@ -301,11 +414,7 @@ fun HomeScreen(
                     ),
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
-                    Text(
-                        if (scanning) "Bin is sweeping… (read-only)" else "Scan now — temp + crash dumps (read-only)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                    )
+                    Text(ctaLabel, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
 
                 if (plan != null && !scanning) {
@@ -325,7 +434,7 @@ fun HomeScreen(
         }
 
         Text(
-            "trashpanda v0.2 · scan → report → Recycle Bin with receipts · undo from any receipt",
+            "Trashpanda v0.2 · scan → report → Recycle Bin with receipts · undo from any receipt",
             fontSize = 11.sp,
             color = Tokens.textDim,
         )
@@ -343,20 +452,80 @@ private fun autoCheckableShare(plan: Planner.Plan?): Int? {
 }
 
 /**
- * Real read-only engine pass over the machine's junk hotspots (long paths, so rule
- * globs match): user temp folder, Windows crash dumps, WER queues. planFromDisk skips
- * roots that don't exist, so nothing here throws.
+ * Real read-only engine pass (user requirement: drives are scanned ONLY when the user
+ * picks them — nothing is ever auto-swept). FAST: user junk hotspots (temp, crash
+ * dumps, WER) at full walking depth. DEEP: the fast roots AGAIN +, for each PICKED
+ * fixed drive, its Windows\Temp (full depth) and the drive root itself (shallow depth),
+ * merged app-side (paths de-duplicated, counters summed).
  */
-private fun realScan(): Planner.Plan {
-    val catalog = RuleCatalog.loadBuiltin()
+private fun realScan(scope: ScanScope, pickedDrives: Set<String>): Planner.Plan {
+    val planner = Planner(RuleCatalog.loadBuiltin())
+    val fast = planner.planFromDisk(userJunkRoots())
+    if (scope == ScanScope.FAST) return fast
+
+    val perDrive = pickedDrives.sorted().map { root ->
+        val rootPath = Path.of(root)
+        mergePlans(listOf(
+            planner.planFromDisk(listOf(rootPath.resolve("Windows").resolve("Temp")), maxDepth = 12),
+            planner.planFromDisk(listOf(rootPath), maxDepth = 8),
+        ))
+    }
+    return mergePlans(listOf(fast) + perDrive)
+}
+
+/** User-writable junk hotspots every Windows machine has. planFromDisk skips missing roots. */
+private fun userJunkRoots(): List<Path> {
     val lad = System.getenv("LOCALAPPDATA")
-    val roots = listOfNotNull(
+    return listOfNotNull(
         lad?.let { Path.of(it, "Temp") },
         lad?.let { Path.of(it, "CrashDumps") },
         lad?.let { Path.of(it, "Microsoft", "Windows", "WER", "ReportQueue") },
         lad?.let { Path.of(it, "Microsoft", "Windows", "WER", "ReportArchive") },
     )
-    return Planner(catalog).planFromDisk(roots)
+}
+
+/**
+ * Merge already-matched plans into one: de-duplicate by path (case-insensitive, like
+ * Windows), sum the counters, concatenate scanned roots. Never re-matches — each part
+ * already went through the same first-rule-wins Planner.
+ */
+private fun mergePlans(parts: List<Planner.Plan>): Planner.Plan {
+    val seen = HashSet<String>()
+    val items = mutableListOf<Planner.Item>()
+    for (part in parts) {
+        for (item in part.items) {
+            if (seen.add(item.path.toString().lowercase())) items += item
+        }
+    }
+    return Planner.Plan(
+        items = items.sortedByDescending { it.sizeBytes },
+        deniedDirs = parts.sumOf { it.deniedDirs },
+        reparseMirrors = parts.sumOf { it.reparseMirrors },
+        scannedRoots = parts.flatMap { it.scannedRoots },
+    )
+}
+
+/** Scope switcher pills — quick sweep vs every drive (mirrors the theme switcher style). */
+@Composable
+private fun ScopeSwitch(current: ScanScope, onPick: (ScanScope) -> Unit) {
+    ScanScope.entries.forEach { s ->
+        val active = s == current
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(if (active) Tokens.primary.copy(alpha = 0.16f) else Color.Transparent)
+                .border(1.dp, if (active) Tokens.primary else Tokens.border, RoundedCornerShape(999.dp))
+                .clickable { onPick(s) }
+                .padding(horizontal = 11.dp, vertical = 5.dp),
+        ) {
+            Text(
+                s.label,
+                fontSize = 11.sp,
+                color = if (active) Tokens.primary else Tokens.textDim,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
+    }
 }
 
 /** Theme switcher pills — glass · milk · neon (DESIGN §3.1, live in the header). */
@@ -414,7 +583,17 @@ private fun StatCard(label: String, value: String, valueColor: Color, modifier: 
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(label.uppercase(), fontSize = 11.sp, color = Tokens.textDim, letterSpacing = 0.8.sp)
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = valueColor, modifier = Modifier.padding(top = 4.dp))
+        if (value == "not scanned") {
+            Text(
+                value,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = Tokens.textDim,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = valueColor, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 

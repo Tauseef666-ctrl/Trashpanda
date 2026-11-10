@@ -269,12 +269,12 @@ patterns = ["%LOCALAPPDATA%/Temp/**"]
 minAgeDays = 1
 verdict = "trash"
 action = "recycle"
-dropWhenPaths = ["TrashPanda"]
+dropWhenPaths = ["Trashpanda"]
 
 [[rule]]
 id = "D3"
 title = "Recycle Bin size"
-explanation = "The Recycle Bin is TrashPanda's undo store — emptying it is always your manual call."
+explanation = "The Recycle Bin is Trashpanda's undo store — emptying it is always your manual call."
 risk = "red"
 category = "recycle_bin"
 patterns = ["$RECYCLE.BIN"]
@@ -284,7 +284,7 @@ action = "report_only"
 [[rule]]
 id = "D4"
 title = "Hibernation file (hiberfil.sys)"
-explanation = "Several GB of RAM-image on disk. Never file-deleted; TrashPanda offers a guided 'powercfg /h off' task (v0.2)."
+explanation = "Several GB of RAM-image on disk. Never file-deleted; Trashpanda offers a guided 'powercfg /h off' task (v0.2)."
 risk = "red"
 category = "windows"
 patterns = ["C:/hiberfil.sys"]
@@ -359,6 +359,39 @@ patterns = ["C:/Windows.old/**"]
 verdict = "review"
 action = "recycle"
 
+[[rule]]
+id = "D12"
+title = "Drive Temp folders"
+explanation = "Top-level Temp folders on ANY drive (and Windows\\Temp), minus anything modified in the last 24 h. The big pile other drives carry around."
+risk = "green"
+category = "windows"
+patterns = ["*/Temp/**", "*/Windows/Temp/**"]
+minAgeDays = 1
+verdict = "trash"
+action = "recycle"
+dropWhenPaths = ["Trashpanda"]
+
+[[rule]]
+id = "D13"
+title = "Thumbnail caches (Thumbs.db)"
+explanation = "Windows thumbnail cache files. Explorer rebuilds them the moment it needs them — deleting loses nothing."
+risk = "green"
+category = "windows"
+patterns = ["**/thumbs.db"]
+minAgeDays = 1
+verdict = "trash"
+action = "recycle"
+
+[[rule]]
+id = "D14"
+title = "System memory files (pagefile / hiberfil / swapfile)"
+explanation = "Windows keeps its own memory/backup files at every drive root it uses. These are system-owned: Trashpanda only reports them — they are never file-deleted."
+risk = "red"
+category = "windows"
+patterns = ["*/pagefile.sys", "*/hiberfil.sys", "*/swapfile.sys"]
+verdict = "keep"
+action = "report_only"
+
 # ---------- Group E — Browser caches ----------
 
 [[rule]]
@@ -387,7 +420,7 @@ dropWhenPaths = ["Cookies", "Login Data", "Bookmarks", "Local Storage", "Indexed
 [[rule]]
 id = "F1"
 title = "Large personal files"
-explanation = "Files over 200 MB in Downloads/Desktop. TrashPanda explains but never checks them. Your data = ask-first, always."
+explanation = "Files over 200 MB in Downloads/Desktop. Trashpanda explains but never checks them. Your data = ask-first, always."
 risk = "red"
 category = "personal"
 patterns = [
@@ -396,4 +429,39 @@ patterns = [
 ]
 minSizeMB = 200
 verdict = "review"
+action = "report_only"
+
+# ---------- Group G — drive-surface junk (user addendum 10 Nov: data drives must have real finds) ----------
+
+[[rule]]
+id = "D15"
+title = "Crash dumps on any drive"
+explanation = "Windows and crashed apps leave .dmp memory snapshots behind. No program needs an old one. Unticked by default — you decide."
+risk = "amber"
+category = "windows"
+patterns = ["**/*.dmp"]
+minAgeDays = 3
+verdict = "trash"
+action = "recycle"
+
+[[rule]]
+id = "D16"
+title = "chkdsk recovered fragments"
+explanation = "Leftovers from Disk-Behind error checks (FOUND folders, .chk fragments). Recovered data was already disposable — these files are shell debris."
+risk = "amber"
+category = "windows"
+patterns = ["**/*.chk", "*/FOUND.*/**", "*/FOUND.0*/*"]
+minAgeDays = 1
+verdict = "trash"
+action = "recycle"
+dropWhenPaths = ["System Volume Information"]
+
+[[rule]]
+id = "D17"
+title = "Windows DumpStack boot log (drive roots)"
+explanation = "Windows writes this tiny boot log at every disk root. It is system-owned and re-creates itself — shown for eyes only, never moved."
+risk = "red"
+category = "windows"
+patterns = ["*/DumpStack.log.tmp", "*/DumpStack.log"]
+verdict = "keep"
 action = "report_only"

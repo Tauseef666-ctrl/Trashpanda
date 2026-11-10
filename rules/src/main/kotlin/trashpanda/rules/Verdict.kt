@@ -12,8 +12,8 @@ package trashpanda.rules
 enum class Verdict(val label: String, val guidance: String) {
     TRASH("trash", "This is garbage. Safe to clean."),
     REGENERATES("regenerates", "Tools re-download or rebuild this automatically. Costs time, not data."),
-    REVIEW("review", "This is your data or a real tool. TrashPanda asks — you decide."),
-    KEEP("keep", "System-critical. TrashPanda never cleans this. Look, don't touch.");
+    REVIEW("review", "This is your data or a real tool. Trashpanda asks — you decide."),
+    KEEP("keep", "System-critical. Trashpanda never cleans this. Look, don't touch.");
 
     companion object {
         fun parse(raw: String): Verdict =

@@ -46,6 +46,23 @@ class Planner(private val catalog: LoadedCatalog, private val env: Map<String, S
         return planFromWalked(all, walked)
     }
 
+    /**
+     * Same as [planFromDisk], but with an explicit walk depth — drive roots get
+     * shallow passes (4) so an all-drives scan stays fast, while user dirs may
+     * need the full 12.
+     */
+    fun planFromDisk(roots: List<Path>, maxDepth: Int): Plan {
+        val scanner = Scanner()
+        val all = mutableListOf<Scanner.WalkSummary>()
+        val walked = mutableListOf<Path>()
+        for (root in roots) {
+            if (!root.toFile().exists()) continue
+            all.add(scanner.walk(root, maxDepth = maxDepth))
+            walked.add(root)
+        }
+        return planFromWalked(all, walked)
+    }
+
     fun planFromWalked(summaries: List<Scanner.WalkSummary>, walkedRoots: List<Path>): Plan {
         val items = mutableListOf<Item>()
         summaries.flatMap { it.entries }.distinctBy { it.path }.forEach { entry ->

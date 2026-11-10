@@ -66,7 +66,7 @@ import java.nio.file.Path
  * the GUI and the console go through the identical engine path.
  */
 
-/** One rule's cluster of findings. */
+/** One rule's cluster of findings — a card with title, verdict chip, explanation, subtotal. */
 private data class Group(
     val id: String,
     val title: String,
@@ -78,10 +78,31 @@ private data class Group(
     val totalBytes: Long get() = items.sumOf { it.sizeBytes }
 }
 
-private sealed interface Block {
-    data class Head(val group: Group) : Block
-    data class Entry(val item: Planner.Item) : Block
+/**
+ * One trash category — a stack of rule groups. Carries the tick-all/clear one-click:
+ * every GREEN-safe item in the whole category goes in one button press.
+ */
+private data class CategoryGroup(
+    val id: trashpanda.rules.CategoryId,
+    val display: String,
+    val rules: List<Group>,
+) {
+    val items: List<Planner.Item> get() = rules.flatMap { it.items }
+    val totalBytes: Long get() = items.sumOf { it.sizeBytes }
+    val tickable: List<Planner.Item> get() = items.filter { selectable(it) }
 }
+
+private sealed interface Block {
+    data class Category(val cat: CategoryGroup) : Block
+    /** Rule head carries how many of its items are listed directly (preview vs expanded). */
+    data class Rule(val group: Group, val shownCount: Int, val expanded: Boolean) : Block
+    data class Entry(val item: Planner.Item) : Block
+    /** "show all N items" / "collapse" row for big rules — 20k-list relief valve. */
+    data class SeeAll(val group: Group, val expand: Boolean, val hiddenCount: Int) : Block
+}
+
+/** Items of a rule listed directly before "show all" — keeps huge rules (20k+ temp files) renderable. */
+private const val PREVIEW_ITEMS = 3
 
 /** Which items may ever be ticked — GUI mirror of the executor's own guards. */
 private fun selectable(item: Planner.Item): Boolean =
@@ -100,7 +121,7 @@ fun ReportScreen(
     port: RecyclePort = { p -> ShellOp.recycleToBin(p).let { RecycleOut(it.code, it.aborted) } },
     /** Which Recycle Bin folders undo searches. Defaults to the real bin; tests inject fixtures. */
     binFolders: (Path) -> List<Path> = { BinIndex.readableBinFolders(it) },
-    /** Where receipts are written. Defaults to %APPDATA%\TrashPanda\receipts. */
+    /** Where receipts are written. Defaults to %APPDATA%\Trashpanda\receipts. */
     receiptsDir: Path = AppDirs.receipts,
     /** Which thread performs scan-independent engine work. Defaults to Dispatchers.IO. */
     worker: CoroutineDispatcher = Dispatchers.IO,
@@ -109,18 +130,25 @@ fun ReportScreen(
 
     val store = remember(receiptsDir) { ReceiptStore(receiptsDir) }
     var selectedPaths by remember(plan) { mutableStateOf(prechecked(plan)) }
+    var expandedRules by remember(plan) { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     var confirmOpen by remember { mutableStateOf(false) }
     var receipt by remember { mutableStateOf<Receipt?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
 
-    val chosen = plan.items.filter { it.path.toString() in selectedPaths && selectable(it) }
+    // Remembered: filtering 20k+ items on every recomposition would make ticks feel dead.
+    val chosen = remember(selectedPaths, plan) {
+        plan.items.filter { it.path.toString() in selectedPaths && selectable(it) }
+    }
+    val cleanablePaths = remember(plan) {
+        plan.items.filter { selectable(it) }.map { it.path.toString() }
+    }
 
     val groups = remember(plan) {
         plan.items.groupBy { it.rule.id }
-            .map { (id, items) ->
+            .map { (_, items) ->
                 Group(
-                    id = id,
+                    id = items.first().rule.id,
                     title = items.first().rule.title,
                     explanation = items.first().rule.explanation,
                     verdict = items.first().rule.verdict,
@@ -130,8 +158,35 @@ fun ReportScreen(
             }
             .sortedByDescending { it.totalBytes }
     }
-    val blocks = remember(groups) {
-        groups.flatMap { g -> listOf<Block>(Block.Head(g)) + g.items.map { Block.Entry(it) } }
+    val cats = remember(groups) {
+        groups.groupBy { it.items.first().rule.category }
+            .map { (category, rules) ->
+                CategoryGroup(
+                    id = category,
+                    display = category.display,
+                    rules = rules,
+                )
+            }
+            .sortedByDescending { it.totalBytes }
+    }
+    val blocks = remember(cats, expandedRules) {
+        cats.flatMap { c ->
+            buildList {
+                add(Block.Category(c))
+                c.rules.forEach { g ->
+                    val expanded = g.id in expandedRules
+                    val shown = if (expanded) g.items.size else minOf(PREVIEW_ITEMS, g.items.size)
+                    add(Block.Rule(g, shown, expanded))
+                    g.items.take(shown).forEach { add(Block.Entry(it)) }
+                    val hidden = g.items.size - shown
+                    if (hidden > 0) {
+                        add(Block.SeeAll(g, expand = true, hiddenCount = hidden))
+                    } else if (expanded && g.items.size > PREVIEW_ITEMS) {
+                        add(Block.SeeAll(g, expand = false, hiddenCount = 0))
+                    }
+                }
+            }
+        }
     }
     val lookOnlyBytes = plan.items
         .filter { it.action != RuleAction.RECYCLE }
@@ -227,12 +282,55 @@ fun ReportScreen(
                 }
                 items(blocks.size, key = { index ->
                     when (val b = blocks[index]) {
-                        is Block.Head -> "head-${b.group.id}"
+                        is Block.Category -> "cat-${b.cat.id}"
+                        is Block.Rule -> "head-${b.group.id}"
                         is Block.Entry -> "item-${b.item.path}"
+                        is Block.SeeAll -> "see-${b.group.id}"
                     }
                 }) { index ->
                     when (val b = blocks[index]) {
-                        is Block.Head -> HeadCard(b.group)
+                        is Block.Category -> CategoryHeadCard(
+                            cat = b.cat,
+                            tickedCount = b.cat.tickable.count { it.path.toString() in selectedPaths },
+                            busy = busy,
+                            onTickAll = {
+                                selectedPaths = selectedPaths + b.cat.tickable.map { it.path.toString() }
+                            },
+                            onClear = {
+                                selectedPaths = selectedPaths - b.cat.items.map { it.path.toString() }
+                            },
+                        )
+                        is Block.Rule -> RuleHeadCard(
+                            group = b.group,
+                            shownCount = b.shownCount,
+                            tickedCount = b.group.items.count { selectable(it) && it.path.toString() in selectedPaths },
+                            tickableCount = b.group.items.count { selectable(it) },
+                            busy = busy,
+                            onToggleRule = {
+                                val paths = b.group.items.filter { selectable(it) }.map { it.path.toString() }
+                                selectedPaths =
+                                    if (paths.isNotEmpty() && paths.all { it in selectedPaths }) {
+                                        selectedPaths - paths.toSet()
+                                    } else {
+                                        selectedPaths + paths
+                                    }
+                            },
+                            onSeeAll = {
+                                expandedRules =
+                                    if (b.group.id in expandedRules) expandedRules - b.group.id
+                                    else expandedRules + b.group.id
+                            },
+                        )
+                        is Block.SeeAll -> SeeAllRow(
+                            group = b.group,
+                            expand = b.expand,
+                            hiddenCount = b.hiddenCount,
+                            onToggle = {
+                                expandedRules =
+                                    if (b.group.id in expandedRules) expandedRules - b.group.id
+                                    else expandedRules + b.group.id
+                            },
+                        )
                         is Block.Entry -> EntryRow(
                             item = b.item,
                             checked = b.item.path.toString() in selectedPaths,
@@ -255,6 +353,10 @@ fun ReportScreen(
             chosenBytes = chosen.sumOf { it.sizeBytes },
             busy = busy,
             confirmOpen = confirmOpen,
+            hasCleanable = cleanablePaths.isNotEmpty(),
+            hasSelection = selectedPaths.isNotEmpty(),
+            onSelectAll = { selectedPaths = selectedPaths + cleanablePaths },
+            onClearAll = { selectedPaths = emptySet() },
             onAsk = { if (chosen.isNotEmpty() && !busy) { failure = null; confirmOpen = true } },
             onCancelConfirm = { confirmOpen = false },
             onConfirm = { executeSelection() },
@@ -270,6 +372,10 @@ private fun FooterBar(
     chosenBytes: Long,
     busy: Boolean,
     confirmOpen: Boolean,
+    hasCleanable: Boolean,
+    hasSelection: Boolean,
+    onSelectAll: () -> Unit,
+    onClearAll: () -> Unit,
     onAsk: () -> Unit,
     onCancelConfirm: () -> Unit,
     onConfirm: () -> Unit,
@@ -328,6 +434,25 @@ private fun FooterBar(
                     onClick = onAsk,
                 )
             }
+            // The global one-click: every cleanable item in the whole plan, or a full reset.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TextButton(onClick = onSelectAll, enabled = hasCleanable && !busy) {
+                    Text(
+                        "tick every cleanable item",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Tokens.primary,
+                    )
+                }
+                TextButton(onClick = onClearAll, enabled = hasSelection && !busy) {
+                    Text("clear everything", fontSize = 12.sp, color = Tokens.textDim)
+                }
+            }
+            Text(
+                "One-click clean: 'tick all' on a category sweeps it — GREEN items are pre-ticked already, trashpanda only asks twice.",
+                fontSize = 11.sp,
+                color = Tokens.textDim,
+            )
         }
     }
 }
@@ -351,18 +476,89 @@ private fun MittButton(label: String, enabled: Boolean, onClick: () -> Unit) {
 
 // ─────────────────────────────────────────────────────────── group + rows
 
+/**
+ * Category head — the one-click level. "tick all" ticks every GREEN- or AMBER-cleanable
+ * item in the category (RED/report-only stay untouchable on every path); "clear" drops
+ * the whole category from the selection. Look-only categories get no buttons at all.
+ */
 @Composable
-private fun HeadCard(group: Group) {
+private fun CategoryHeadCard(
+    cat: CategoryGroup,
+    tickedCount: Int,
+    busy: Boolean,
+    onTickAll: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Tokens.primary.copy(alpha = 0.07f))
+            .border(1.dp, Tokens.primary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                cat.display,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Tokens.text,
+                modifier = Modifier.weight(1f),
+            )
+            Text(Sizes.human(cat.totalBytes), fontSize = 13.5.sp, color = Tokens.text, fontFamily = FontFamily.Monospace)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val pile = if (tickedCount > 0) {
+                "${cat.tickable.size} cleanable · $tickedCount ticked"
+            } else {
+                "${cat.items.size} item(s)"
+            }
+            Text(pile, fontSize = 11.5.sp, color = Tokens.textDim, modifier = Modifier.weight(1f))
+            if (cat.tickable.isNotEmpty()) {
+                TextButton(onClick = onTickAll, enabled = !busy) {
+                    Text("tick all", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Tokens.primary)
+                }
+                TextButton(onClick = onClear, enabled = !busy) {
+                    Text("clear", fontSize = 12.5.sp, color = Tokens.textDim)
+                }
+            } else {
+                Chip(fg = Tokens.riskDanger, bg = Color(0x1FEF4444), label = "report only")
+            }
+        }
+    }
+}
+
+/**
+ * Rule head — now a selectable unit (the 20k relief): its checkbox ticks/unticks every
+ * cleanable item of the rule in ONE press, plus click whole row to toggle. Caption shows
+ * "N item(s) · M ticked" so a 12k-line preview is never needed to drive selection.
+ */
+@Composable
+private fun RuleHeadCard(
+    group: Group,
+    shownCount: Int,
+    tickedCount: Int,
+    tickableCount: Int,
+    busy: Boolean,
+    onToggleRule: () -> Unit,
+    onSeeAll: () -> Unit,
+) {
+    val canToggle = tickableCount > 0 && !busy
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Tokens.surface.copy(alpha = 0.72f))
             .border(1.dp, Tokens.border, RoundedCornerShape(12.dp))
+            .then(if (canToggle) Modifier.clickable(onClick = onToggleRule) else Modifier)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (tickableCount > 0) {
+                TickBox(checked = tickedCount == tickableCount, enabled = !busy, onToggle = onToggleRule)
+            }
             Text(
                 group.title,
                 fontSize = 14.5.sp,
@@ -373,8 +569,34 @@ private fun HeadCard(group: Group) {
             VerdictChip(group.verdict)
             Text(Sizes.human(group.totalBytes), fontSize = 13.sp, color = Tokens.text, fontFamily = FontFamily.Monospace)
         }
-        Text(group.explanation, fontSize = 12.sp, color = Tokens.textDim)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(group.explanation, fontSize = 12.sp, color = Tokens.textDim, modifier = Modifier.weight(1f))
+            val pile = if (tickableCount > 0 && tickedCount > 0) {
+                "${group.items.size} item(s) · $tickedCount ticked"
+            } else {
+                "${group.items.size} item(s)"
+            }
+            Text(pile, fontSize = 11.sp, color = Tokens.textDim)
+        }
     }
+}
+
+/** "show all 12,345 items" / "collapse" — keeps giant rules one row instead of 12k rows. */
+@Composable
+private fun SeeAllRow(group: Group, expand: Boolean, hiddenCount: Int, onToggle: () -> Unit) {
+    Text(
+        if (expand) "show all $hiddenCount more item(s)" else "collapse this rule",
+        fontSize = 11.5.sp,
+        color = Tokens.primary,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = FontFamily.Monospace,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Tokens.cardInset)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    )
 }
 
 @Composable
@@ -533,7 +755,7 @@ private fun ReceiptPanel(receipt: Receipt, busy: Boolean, onUndo: () -> Unit) {
             }
         }
         Text(
-            "receipt file: %APPDATA%\\TrashPanda\\receipts\\${receipt.id}.json",
+            "receipt file: %APPDATA%\\Trashpanda\\receipts\\${receipt.id}.json",
             fontSize = 10.sp,
             color = Tokens.textDim,
             fontFamily = FontFamily.Monospace,

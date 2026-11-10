@@ -8,18 +8,19 @@ import java.nio.file.Path
 import kotlin.io.path.readText
 
 /**
- * Theme persistence — settings.json (DESIGN): %APPDATA%\TrashPanda\settings.json.
+ * Theme persistence — settings.json (DESIGN): %APPDATA%\Trashpanda\settings.json.
  * Corruption or absence must never block the app: every failure falls back to the
  * Dark glass default and is otherwise silent.
  */
 @Serializable
-private data class SettingsDto(val theme: String = ThemeName.DARK_GLASS.name)
+private data class SettingsDto(val theme: String) // NO default: the key must always be written.
 
 object Settings {
 
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
+        encodeDefaults = true // keep `theme` visible even when it's the default
     }
 
     fun loadTheme(path: Path = AppDirs.settings): ThemeName {

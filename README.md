@@ -21,7 +21,7 @@ Kotlin · Compose Desktop · 100% local · no telemetry · MIT
 Your dev machine fills up with gigabytes of invisible junk — AI-agent session
 databases, 250 MB CLI binaries installed three times, browser builds bundled
 inside agent tools, npm/Gradle/pip caches, stale build outputs. Windows Storage
-Sense doesn't know any of this. **TrashPanda scans, explains every item in plain
+Sense doesn't know any of this. **Trashpanda scans, explains every item in plain
 language, risk-codes it, and removes only what you approve — always to the
 Recycle Bin, never a hard delete.**
 
@@ -38,8 +38,8 @@ you're looking at:
 |---|---|
 | `trash` | Garbage. Safe to clean. |
 | `regenerates` | Tools re-download or rebuild it automatically. Costs time, not data. |
-| `review` | Your data or a real tool. TrashPanda asks — **you** decide. |
-| `keep` | System-critical. TrashPanda never cleans it. |
+| `review` | Your data or a real tool. Trashpanda asks — **you** decide. |
+| `keep` | System-critical. Trashpanda never cleans it. |
 
 ## Preview
 
@@ -112,8 +112,8 @@ asserted byte-for-byte on a live fixture tree.
 ## Roadmap
 
 - **v0.1 (now)** — scaffold · rule db · read-only engine · interview · Compose Home
-- **v0.2** — Recycle Bin execution + receipts + undo (**shipped**) · report screen + GUI execute/undo (**shipped**)
-- **v0.3** — themes: Light milk + Terminal neon with switcher (**shipped**) · theme persistence (settings.json) (**shipped**) · elevated tasks (hibernation, DISM) · scheduler · tray
+- **v0.2** — Recycle Bin execution + receipts + undo (**shipped**) · report screen + GUI execute/undo (**shipped**) · themes + theme persistence (**shipped**) · all-drives scan scope + category one-click + rule-level bulk tick (**shipped**)
+- **v0.3** — elevated tasks (hibernation, DISM) · scheduler · tray
 - **v1.0** — signed installer · duplicate finder · `--dry-run --json` CLI
 
 Full contracts: [PLAN.txt](PLAN.txt) + [DESIGN.md](DESIGN.md).

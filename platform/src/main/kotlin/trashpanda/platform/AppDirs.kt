@@ -4,15 +4,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * TrashPanda's own data home (DESIGN §5.8):
- * %APPDATA%\TrashPanda\{receipts,logs} — nothing outside it is ever written.
+ * Trashpanda's own data home (DESIGN §5.8):
+ * %APPDATA%\Trashpanda\{receipts,logs} — nothing outside it is ever written.
+ * Windows paths are case-insensitive, so this is the same folder the app always used.
  */
 object AppDirs {
 
     val root: Path by lazy {
         val appData = System.getenv("APPDATA")
             ?: (System.getProperty("user.home") + "\\AppData\\Roaming")
-        Path.of(appData, "TrashPanda")
+        Path.of(appData, "Trashpanda")
     }
 
     val receipts: Path get() = root.resolve("receipts")

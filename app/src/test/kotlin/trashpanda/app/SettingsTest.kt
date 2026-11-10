@@ -23,10 +23,28 @@ class SettingsTest {
     }
 
     @Test
+    fun `saving a theme writes it explicitly into settings json`() {
+        val file = Files.createTempDirectory("tp-settings-test").resolve("settings.json")
+        try {
+            Settings.saveTheme(ThemeName.DARK_GLASS, file)
+            val text = Files.readString(file)
+            // Regression: a live install once wrote `{}`. The DTO carries no default, so
+            // serializing ANY theme (even the default) must name the key explicitly.
+            assertTrue(
+                text.contains("\"theme\": \"DARK_GLASS\""),
+                "settings.json must always carry the theme key explicitly: $text",
+            )
+            assertEquals(ThemeName.DARK_GLASS, Settings.loadTheme(file))
+        } finally {
+            file.parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `missing or corrupt settings never block the app`() {
-        file {
-            // missing file → default
-            assertEquals(ThemeName.DARK_GLASS, Settings.loadTheme())
+        file { path ->
+            // missing file → default (sandbox path was never written)
+            assertEquals(ThemeName.DARK_GLASS, Settings.loadTheme(path))
         }
         file { path ->
             // corrupt file → default

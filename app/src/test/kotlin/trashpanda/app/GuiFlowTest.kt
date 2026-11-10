@@ -134,8 +134,8 @@ class GuiFlowTest {
             setContent {
                 ReportScreen(plan = plan, onBack = {}, receiptsDir = receipts, worker = Dispatchers.Unconfined)
             }
-            // "1.5 MB" shows exactly twice: once in the rule group's total, once on the item row.
-            onAllNodesWithText("1.5 MB").assertCountEquals(2)
+            // "1.5 MB" shows exactly three times: category total, rule subtotal, item row.
+            onAllNodesWithText("1.5 MB").assertCountEquals(3)
         }
     }
 }
