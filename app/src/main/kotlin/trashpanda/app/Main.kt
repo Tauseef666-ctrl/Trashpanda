@@ -25,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,40 @@ private fun windowIcon(): java.awt.Image? = runCatching {
     javax.swing.ImageIcon(url).image
 }.getOrNull()
 
+/**
+ * System tray (user-friendliness pass): Trashpanda stays reachable from the tray —
+ * open the window, run a read-only scan with the CURRENT scope/drive picks, or exit.
+ * Pure AWT around the same icon the window uses; silently absent on systems without
+ * a tray (runCatching + isSupported), never a crash.
+ */
+private fun initTray(
+    onOpen: () -> Unit,
+    onScan: () -> Unit,
+    onExit: () -> Unit,
+): java.awt.TrayIcon? = runCatching {
+    if (!java.awt.SystemTray.isSupported()) return null
+    val img = windowIcon() ?: return null
+    val tray = java.awt.SystemTray.getSystemTray()
+
+    fun item(label: String, action: () -> Unit) = java.awt.MenuItem(label).apply {
+        addActionListener { javax.swing.SwingUtilities.invokeLater(action) }
+    }
+    val menu = java.awt.PopupMenu().apply {
+        add(item("Open Trashpanda", onOpen))
+        add(item("Scan now (current scope, read-only)", onScan))
+        addSeparator()
+        add(item("Exit", onExit))
+    }
+    val icon = java.awt.TrayIcon(
+        img.getScaledInstance(16, 16, java.awt.Image.SCALE_SMOOTH),
+        "Trashpanda — eats your digital garbage. Leaves your files alone.",
+        menu,
+    )
+    icon.isImageAutoSize = true
+    tray.add(icon)
+    icon
+}.getOrNull()
+
 /** Scan scope picked on Home: quick user-temp sweep vs the deep drive sweep the user PICKS. */
 enum class ScanScope(val label: String) {
     FAST("temp + apps"),
@@ -83,10 +118,6 @@ fun main() = application {
         title = "Trashpanda — eats your digital garbage. Leaves your files alone.",
         state = rememberWindowState(width = 1120.dp, height = 800.dp),
     ) {
-        LaunchedEffect(Unit) {
-            windowIcon()?.let { window.iconImage = it }
-        }
-
         var screen by remember { mutableStateOf(Screen.HOME) }
         var plan by remember { mutableStateOf<Planner.Plan?>(null) }
         var scanning by remember { mutableStateOf(false) }
@@ -117,6 +148,25 @@ fun main() = application {
                     scanning = false
                     scanStatus = null
                 }
+            }
+        }
+
+        // Tray after scanAndOpen is in scope: the tray's scan uses the CURRENT
+        // scope + drive picks, exactly like the button would.
+        DisposableEffect(Unit) {
+            windowIcon()?.let { window.iconImage = it }
+            val tray = initTray(
+                onOpen = {
+                    runCatching { window.isVisible = true; window.toFront() }
+                },
+                onScan = {
+                    runCatching { window.isVisible = true; window.toFront() }
+                    scanAndOpen()
+                },
+                onExit = { ::exitApplication.invoke() },
+            )
+            onDispose {
+                tray?.let { t -> runCatching { java.awt.SystemTray.getSystemTray().remove(t) } }
             }
         }
 
