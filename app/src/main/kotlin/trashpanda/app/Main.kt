@@ -75,7 +75,7 @@ enum class ScanScope(val label: String) {
     DEEP("drives"),
 }
 
-private enum class Screen { HOME, REPORT, HISTORY }
+private enum class Screen { HOME, REPORT, HISTORY, EXCLUSIONS }
 
 fun main() = application {
     Window(
@@ -93,7 +93,8 @@ fun main() = application {
         var theme by remember { mutableStateOf(Settings.loadTheme()) }
         var scope by remember { mutableStateOf(ScanScope.FAST) }
         var pickedDrives by remember { mutableStateOf(emptySet<String>()) }
-        LaunchedEffect(theme) { Settings.saveTheme(theme) }
+        var exclusions by remember { mutableStateOf(Settings.loadExclusions()) }
+        LaunchedEffect(theme, exclusions) { Settings.saveAll(theme, exclusions) }
         val jobs = rememberCoroutineScope()
 
         fun scanAndOpen() {
@@ -101,7 +102,9 @@ fun main() = application {
             scanning = true
             jobs.launch {
                 try {
-                    plan = withContext(Dispatchers.IO) { realScan(scope, pickedDrives) }
+                    val raw = withContext(Dispatchers.IO) { realScan(scope, pickedDrives) }
+                    // Exclusions apply to EVERY scope: user-forbidden paths never surface.
+                    plan = applyExclusions(raw, exclusions)
                     screen = Screen.REPORT
                 } finally {
                     scanning = false
@@ -126,6 +129,7 @@ fun main() = application {
                         onScan = ::scanAndOpen,
                         onReview = { screen = Screen.REPORT },
                         onHistory = { screen = Screen.HISTORY },
+                        onExclusions = { screen = Screen.EXCLUSIONS },
                     )
                     Screen.REPORT -> {
                         val current = plan
@@ -144,12 +148,19 @@ fun main() = application {
                                 onScan = ::scanAndOpen,
                                 onReview = { screen = Screen.REPORT },
                                 onHistory = { screen = Screen.HISTORY },
+                                onExclusions = { screen = Screen.EXCLUSIONS },
                             )
                         } else {
                             ReportScreen(current, onBack = { screen = Screen.HOME })
                         }
                     }
                     Screen.HISTORY -> HistoryScreen(onBack = { screen = Screen.HOME })
+                    Screen.EXCLUSIONS -> ExclusionsScreen(
+                        exclusions = exclusions,
+                        onAdd = { exclusions = exclusions + it },
+                        onRemove = { exclusions = exclusions - it },
+                        onBack = { screen = Screen.HOME },
+                    )
                 }
                 Scanlines()
             }
@@ -181,6 +192,7 @@ fun HomeScreen(
     onScan: () -> Unit,
     onReview: () -> Unit,
     onHistory: () -> Unit = {},
+    onExclusions: () -> Unit = {},
 ) {
     val drives = remember { Drives.volumes() }
     val totalBytes = drives.sumOf { it.totalBytes }
@@ -236,6 +248,9 @@ fun HomeScreen(
             }
             TextButton(onClick = onHistory) {
                 Text("History", color = Tokens.textDim, fontSize = 13.sp, modifier = Modifier.padding(end = 4.dp))
+            }
+            TextButton(onClick = onExclusions) {
+                Text("Never touch", color = Tokens.textDim, fontSize = 13.sp, modifier = Modifier.padding(end = 4.dp))
             }
             ThemeSwitch(current = theme, onPick = onTheme)
         }
